@@ -12,8 +12,19 @@ async function greet() {
 async function authenticate() {
   try {
     loginMsgEl.textContent = "Opening login window...";
-    const result = await invoke("authenticate");
-    loginMsgEl.textContent = result;
+    const tokens = await invoke("authenticate");
+
+    // Display token information in a readable format
+    loginMsgEl.innerHTML = `
+      <strong>Login Successful!</strong><br>
+      <span style="font-size: 0.9em;">
+        Access Token: ${tokens.access_token.substring(0, 40)}...<br>
+        Refresh Token: ${tokens.refresh_token.substring(0, 40)}...<br>
+        ID Token: ${tokens.id_token.substring(0, 40)}...<br>
+        Expires At: ${new Date(tokens.expires_at * 1000).toLocaleString()}<br>
+        Session State: ${tokens.session_state}
+      </span>
+    `;
   } catch (error) {
     loginMsgEl.textContent = `Error: ${error}`;
   }
