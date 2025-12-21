@@ -16,6 +16,7 @@ pub struct AuthTokens {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserInfo {
     pub id: i64,
+    #[serde(rename = "mail")]
     pub email: String,
     #[serde(default)]
     pub name: Option<String>,
@@ -23,6 +24,12 @@ pub struct UserInfo {
     pub firstname: Option<String>,
     #[serde(default)]
     pub lastname: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UserInfoResponse {
+    pub success: bool,
+    pub data: UserInfo,
 }
 
 // Issue #21: Activities and Pagination

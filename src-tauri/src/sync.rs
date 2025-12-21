@@ -142,14 +142,26 @@ pub async fn should_download_file(
     let metadata = fs::metadata(path).await?;
     let actual_size = metadata.len();
 
-    // Re-download if size doesn't match (incomplete/corrupted file)
-    if actual_size != expected_size {
-        log::warn!("File size mismatch for {:?}: expected {}, found {}. Will re-download.", path, expected_size, actual_size);
-        Ok(true)
-    } else {
-        log::debug!("File already exists with correct size, skipping: {:?}", path);
-        Ok(false) // File is complete, skip download
+    // File exists - check if it seems valid (not empty and not suspiciously small)
+    if actual_size == 0 {
+        log::warn!("File exists but is empty, will re-download: {:?}", path);
+        return Ok(true);
     }
+
+    // If file is significantly smaller than expected (less than 50%), it might be corrupted
+    let size_ratio = actual_size as f64 / expected_size as f64;
+    if size_ratio < 0.5 {
+        log::warn!("File exists but is suspiciously small ({} bytes, expected {}), will re-download: {:?}",
+            actual_size, expected_size, path);
+        return Ok(true);
+    }
+
+    // File exists and seems valid - skip download
+    // Note: API size is often inaccurate (reports uncompressed size while CDN serves compressed),
+    // so we don't do exact size matching
+    log::debug!("File already exists ({} bytes, API reports {} bytes), skipping: {:?}",
+        actual_size, expected_size, path);
+    Ok(false)
 }
 
 // Issue #28: Retry logic with exponential backoff
@@ -298,6 +310,7 @@ impl SyncEngine {
                 let destination = get_media_path(&self.sync_path, activity, media);
 
                 // Check if file needs downloading
+                log::debug!("Checking if file needs download: {} (expected size: {} bytes)", filename, media.size);
                 match should_download_file(&destination, media.size).await {
                     Ok(true) => {
                         // File needs downloading
@@ -307,7 +320,13 @@ impl SyncEngine {
                                 // Download with retry
                                 match download_with_retry(&signed_url, &destination, 3).await {
                                     Ok(_) => {
-                                        log::info!("Successfully downloaded: {}", filename);
+                                        // Verify downloaded file size
+                                        if let Ok(metadata) = tokio::fs::metadata(&destination).await {
+                                            log::info!("Successfully downloaded: {} ({} bytes, expected {} bytes)",
+                                                filename, metadata.len(), media.size);
+                                        } else {
+                                            log::info!("Successfully downloaded: {}", filename);
+                                        }
                                         stats.downloaded += 1;
                                     }
                                     Err(e) => {

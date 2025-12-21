@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::time::sleep;
 use std::time::Duration;
-use crate::models::{UserInfo, ActivitiesResponse, Activity};
+use crate::models::{UserInfo, UserInfoResponse, ActivitiesResponse, Activity};
 
 // Issue #23: Custom error types
 #[derive(Debug)]
@@ -145,6 +145,9 @@ impl EducartableClient {
         let response = self.client
             .get(url)
             .header("Authorization", &self.access_token)  // NO "Bearer"!
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("X-Edumoov-NoSession", "true")
             .send()
             .await?;
 
@@ -152,7 +155,10 @@ impl EducartableClient {
         log::debug!("Response status: {}", status);
 
         if !status.is_success() {
-            log::warn!("Non-success status {} for {}", status, url);
+            // Get the error response body for debugging
+            let error_body = response.text().await?;
+            log::error!("Request failed with status {}: {}", status, error_body);
+            return Err(format!("Request failed with status {}: {}", status, error_body).into());
         }
 
         let data: T = response.json().await?;
@@ -190,12 +196,26 @@ impl EducartableClient {
     pub async fn get_user_info(&self) -> Result<UserInfo, Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Fetching user info");
         let url = "https://app.educartable.com/api/1.0/educore/users/me?light=1";
-        let result = self.get::<UserInfo>(url).await;
-        match &result {
-            Ok(_) => log::info!("User info fetched successfully"),
-            Err(e) => log::error!("Failed to fetch user info: {}", e),
+
+        let response = self.client
+            .get(url)
+            .header("Authorization", &self.access_token)
+            .send()
+            .await?;
+
+        let status = response.status();
+        log::debug!("User info response status: {}", status);
+
+        if !status.is_success() {
+            log::error!("User info request failed with status: {}", status);
+            return Err(format!("User info request failed with status: {}", status).into());
         }
-        result
+
+        // Parse the response wrapper and extract the data field
+        let response_wrapper: UserInfoResponse = response.json().await?;
+
+        log::info!("User info fetched successfully for user ID: {}", response_wrapper.data.id);
+        Ok(response_wrapper.data)
     }
 
     pub async fn get_parent_id(&self) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
@@ -209,17 +229,16 @@ impl EducartableClient {
     pub async fn get_activities(
         &self,
         parent_id: i64,
-        page: u32
     ) -> Result<ActivitiesResponse, Box<dyn std::error::Error + Send + Sync>> {
-        log::debug!("Fetching activities page {} for parent {}", page, parent_id);
+        log::debug!("Fetching activities for parent {}", parent_id);
         let url = format!(
-            "https://app.educartable.com/api/1.0/educartable/parent/{}/messages?type=activity&sort=date&direction=desc&page={}",
-            parent_id, page
+            "https://app.educartable.com/api/1.0/educartable/parent/{}/messages?type=activity&sort=date&direction=desc",
+            parent_id
         );
         let result = self.get::<ActivitiesResponse>(&url).await;
         match &result {
-            Ok(response) => log::debug!("Fetched {} activities from page {}", response.data.len(), page),
-            Err(e) => log::error!("Failed to fetch activities page {}: {}", page, e),
+            Ok(response) => log::debug!("Fetched {} activities", response.data.len()),
+            Err(e) => log::error!("Failed to fetch activities: {}", e),
         }
         result
     }
@@ -229,24 +248,12 @@ impl EducartableClient {
         parent_id: i64
     ) -> Result<Vec<Activity>, Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Fetching all activities for parent {}", parent_id);
-        let mut all_activities = Vec::new();
-        let mut page = 1;
 
-        loop {
-            let response = self.get_activities(parent_id, page).await?;
-            let count = response.data.len();
-            all_activities.extend(response.data);
+        let response = self.get_activities(parent_id).await?;
+        let activities = response.data;
 
-            log::debug!("Page {}: {} activities (total so far: {})", page, count, all_activities.len());
-
-            if !response.pagination.has_next_page {
-                break;
-            }
-            page += 1;
-        }
-
-        log::info!("Fetched {} total activities across {} pages", all_activities.len(), page);
-        Ok(all_activities)
+        log::info!("Fetched {} total activities", activities.len());
+        Ok(activities)
     }
 
     // Issue #22: Signed URL retrieval
