@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 // Data models
 
@@ -60,4 +61,30 @@ pub struct Pagination {
     pub has_prev_page: bool,
     pub count: u32,
     pub limit: u32,
+}
+
+// Issue #26: Progress tracking structures
+#[derive(Debug, Serialize, Clone)]
+pub struct SyncProgress {
+    pub current: u32,
+    pub total: u32,
+    pub current_file: String,
+    pub percentage: f32,
+}
+
+#[derive(Debug, Serialize, Default)]
+pub struct SyncStats {
+    pub total_activities: u32,
+    pub total_media: u32,
+    pub downloaded: u32,
+    pub skipped: u32,
+    pub failed: u32,
+}
+
+// Issue #29: App Configuration for video support
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AppConfig {
+    pub sync_path: PathBuf,
+    pub include_videos: bool,
+    pub organize_by_date: bool,
 }
