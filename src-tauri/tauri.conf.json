@@ -23,13 +23,34 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "dmg", "appimage"],
+    "shortDescription": "Synchronisation de photos depuis Educartable",
+    "longDescription": "Application de bureau pour télécharger et synchroniser par lot les photos depuis Educartable vers votre ordinateur.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perUser",
+        "languages": ["French"],
+        "template": null
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.13",
+      "hardenedRuntime": true,
+      "frameworks": [],
+      "entitlements": null,
+      "signingIdentity": null
+    },
+    "appimage": {
+      "bundleMediaFramework": false
+    }
   }
 }
