@@ -5,9 +5,53 @@ use tauri::webview::PageLoadEvent;
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 use crate::models::AuthTokens;
+use keyring::Entry;
 
 // Global state to store tokens during extraction
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
+
+// Constants for keyring service identification
+const SERVICE_NAME: &str = "educartable-downloader";
+const USERNAME: &str = "auth_tokens";
+
+/// Store authentication tokens securely in the OS keyring
+pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
+    let entry = Entry::new(SERVICE_NAME, USERNAME)
+        .map_err(|e| format!("Keyring error: {}", e))?;
+
+    let tokens_json = serde_json::to_string(tokens)
+        .map_err(|e| format!("Serialization error: {}", e))?;
+
+    entry.set_password(&tokens_json)
+        .map_err(|e| format!("Failed to store tokens: {}", e))?;
+
+    Ok(())
+}
+
+/// Load authentication tokens from the OS keyring
+pub fn load_tokens() -> Result<AuthTokens, String> {
+    let entry = Entry::new(SERVICE_NAME, USERNAME)
+        .map_err(|e| format!("Keyring error: {}", e))?;
+
+    let tokens_json = entry.get_password()
+        .map_err(|e| format!("Failed to load tokens: {}", e))?;
+
+    let tokens: AuthTokens = serde_json::from_str(&tokens_json)
+        .map_err(|e| format!("Deserialization error: {}", e))?;
+
+    Ok(tokens)
+}
+
+/// Delete authentication tokens from the OS keyring
+pub fn delete_tokens() -> Result<(), String> {
+    let entry = Entry::new(SERVICE_NAME, USERNAME)
+        .map_err(|e| format!("Keyring error: {}", e))?;
+
+    entry.delete_password()
+        .map_err(|e| format!("Failed to delete tokens: {}", e))?;
+
+    Ok(())
+}
 
 #[tauri::command]
 pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
@@ -109,6 +153,9 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     // Parse the JSON string into AuthTokens
     let tokens: AuthTokens = serde_json::from_str(&tokens_str)
         .map_err(|e| format!("Failed to parse tokens: {}", e))?;
+
+    // Store tokens securely in the OS keyring
+    store_tokens(&tokens)?;
 
     Ok(tokens)
 }
