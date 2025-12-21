@@ -5,6 +5,27 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "core:webview:allow-create-webview-window",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-download-read-recursive",
+    "fs:allow-download-write-recursive",
+    "fs:allow-mkdir",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-exists",
+    "fs:allow-read-dir",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://app.educartable.com/*" },
+        { "url": "https://www.edumoov.com/*" },
+        { "url": "https://filerz.edumoov.com/*" },
+        { "url": "https://accounts.edumoov.com/*" }
+      ]
+    },
+    "dialog:allow-open",
+    "shell:allow-open"
   ]
 }
