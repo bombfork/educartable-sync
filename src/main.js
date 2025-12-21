@@ -83,10 +83,10 @@ async function handleLogin() {
     loginBtn.disabled = true;
     loginBtn.setAttribute('aria-busy', 'true');
     const originalText = loginBtn.textContent;
-    loginBtn.textContent = 'Logging in...';
+    loginBtn.textContent = 'Connexion...';
 
     // Show loading notification
-    const loadingNotification = showLoading('Opening login window...');
+    const loadingNotification = showLoading('Ouverture de la fenêtre de connexion...');
 
     try {
         // Call the Tauri authenticate command (opens webview)
@@ -100,7 +100,7 @@ async function handleLogin() {
         updateAuthUI();
 
         // Show success notification
-        showSuccess('Successfully logged in to Educartable!');
+        showSuccess('Connecté à Educartable avec succès !');
     } catch (error) {
         console.error('Login failed:', error);
 
@@ -133,7 +133,7 @@ async function handleLogout() {
     logoutBtn.disabled = true;
     logoutBtn.setAttribute('aria-busy', 'true');
     const originalText = logoutBtn.textContent;
-    logoutBtn.textContent = 'Logging out...';
+    logoutBtn.textContent = 'Déconnexion...';
 
     try {
         // Call the Tauri logout command
@@ -144,7 +144,7 @@ async function handleLogout() {
         updateAuthUI();
 
         // Show success notification
-        showSuccess('Successfully logged out');
+        showSuccess('Déconnecté avec succès');
     } catch (error) {
         console.error('Logout failed:', error);
 
@@ -169,7 +169,7 @@ function updateAuthUI() {
 
     if (isAuthenticated) {
         // Connected state
-        authStatus.textContent = '✓ Connected';
+        authStatus.textContent = '✓ Connecté';
         authStatus.className = 'status-connected';
 
         // Show logout button, hide login button
@@ -180,7 +180,7 @@ function updateAuthUI() {
         syncBtn.disabled = false;
     } else {
         // Disconnected state
-        authStatus.textContent = 'Not connected';
+        authStatus.textContent = 'Non connecté';
         authStatus.className = 'status-disconnected';
 
         // Show login button, hide logout button
@@ -225,7 +225,7 @@ function displayConfig() {
         syncPathInput.placeholder = '';
     } else {
         syncPathInput.value = '';
-        syncPathInput.placeholder = 'No folder selected';
+        syncPathInput.placeholder = 'Aucun dossier sélectionné';
     }
 }
 
@@ -272,13 +272,13 @@ async function handleBrowse() {
             await saveConfig();
 
             // Show success notification
-            showSuccess('Sync folder selected successfully');
+            showSuccess('Dossier de synchronisation sélectionné avec succès');
         }
     } catch (error) {
         console.error('Failed to select directory:', error);
 
         // Only show error if it's not a cancellation
-        if (error !== 'No folder selected') {
+        if (error !== 'No folder selected' && error !== 'Aucun dossier sélectionné') {
             handleError(error, 'select directory');
         }
     } finally {
@@ -311,7 +311,7 @@ function updateProgress(progress) {
     progressFill.style.width = `${progress.percentage}%`;
 
     // Update text
-    progressText.textContent = `${progress.current} / ${progress.total} files (${Math.round(progress.percentage)}%)`;
+    progressText.textContent = `${progress.current} / ${progress.total} fichiers (${Math.round(progress.percentage)}%)`;
     currentFile.textContent = progress.current_file ? `📄 ${progress.current_file}` : '';
 }
 
@@ -326,7 +326,7 @@ async function handleSync() {
 
     // Validate configuration
     if (!config.sync_path) {
-        const parsed = parseError('Sync directory not configured');
+        const parsed = parseError('Dossier de synchronisation non configuré');
         showError(parsed.title, parsed.message, parsed.action);
         return;
     }
@@ -335,11 +335,11 @@ async function handleSync() {
     syncBtn.disabled = true;
     syncBtn.setAttribute('aria-busy', 'true');
     const originalText = syncBtn.textContent;
-    syncBtn.textContent = 'Syncing...';
+    syncBtn.textContent = 'Synchronisation...';
 
     // Reset progress
     document.getElementById('sync-progress-fill').style.width = '0%';
-    document.getElementById('progress-text').textContent = 'Starting...';
+    document.getElementById('progress-text').textContent = 'Démarrage...';
     document.getElementById('current-file').textContent = '';
 
     try {
@@ -349,7 +349,7 @@ async function handleSync() {
         console.log('Sync completed successfully:', stats);
 
         // Show success notification with stats
-        const successMsg = `Downloaded ${stats.downloaded} files, skipped ${stats.skipped}, ${stats.failed > 0 ? `${stats.failed} failed` : 'no failures'}`;
+        const successMsg = `${stats.downloaded} fichiers téléchargés, ${stats.skipped} ignorés${stats.failed > 0 ? `, ${stats.failed} en échec` : ', aucun échec'}`;
         showSuccess(successMsg);
     } catch (error) {
         console.error('Sync failed:', error);

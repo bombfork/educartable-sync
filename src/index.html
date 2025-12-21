@@ -16,18 +16,18 @@
         <article>
             <header>
                 <h1>📚 Educartable Sync</h1>
-                <p>Download and sync photos from your child's school activities</p>
+                <p>Téléchargez et synchronisez les photos des activités scolaires de votre enfant</p>
             </header>
 
             <!-- Auth and Config Container -->
             <div class="two-column-layout">
                 <!-- Authentication Section -->
                 <section id="auth-section">
-                    <h2>👤 Authentication</h2>
+                    <h2>👤 Authentification</h2>
                     <div style="display: flex; align-items: center; gap: 1rem; margin-top: 2.5rem;">
-                        <span>Status: <strong id="auth-status" class="status-disconnected">Not connected</strong></span>
-                        <button id="login-btn">Login to Educartable</button>
-                        <button id="logout-btn" class="secondary hidden" style="margin: 0; padding: 0.25rem 0.75rem;">Logout</button>
+                        <span>Statut : <strong id="auth-status" class="status-disconnected">Non connecté</strong></span>
+                        <button id="login-btn">Se connecter</button>
+                        <button id="logout-btn" class="secondary hidden" style="margin: 0; padding: 0.25rem 0.75rem;">Déconnexion</button>
                     </div>
                 </section>
 
@@ -36,10 +36,10 @@
                     <h2>⚙️ Configuration</h2>
 
                     <div>
-                        <label style="margin-bottom: 0.5rem;">📁 Sync Directory</label>
+                        <label style="margin-bottom: 0.5rem;">📁 Dossier de synchronisation</label>
                         <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center;">
-                            <input type="text" id="sync-path" readonly placeholder="No folder selected" style="cursor: pointer; margin: 0;">
-                            <button id="browse-btn" class="secondary" style="margin: 0;">Browse</button>
+                            <input type="text" id="sync-path" readonly placeholder="Aucun dossier sélectionné" style="cursor: pointer; margin: 0;">
+                            <button id="browse-btn" class="secondary" style="margin: 0;">Parcourir</button>
                         </div>
                     </div>
                 </section>
@@ -47,16 +47,16 @@
 
             <!-- Sync Section -->
             <section id="sync-section">
-                <h2>📥 Synchronization</h2>
+                <h2>📥 Synchronisation</h2>
 
                 <button id="sync-btn" disabled>
-                    Synchronize Now
+                    Synchroniser maintenant
                 </button>
 
                 <div id="sync-progress-container">
                     <div class="custom-progress-bar">
                         <div id="sync-progress-fill" class="progress-fill"></div>
-                        <div id="progress-text" class="progress-text">0 / 0 files</div>
+                        <div id="progress-text" class="progress-text">0 / 0 fichiers</div>
                     </div>
                     <small id="current-file"></small>
                 </div>

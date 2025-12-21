@@ -25,7 +25,7 @@ export function showError(title, message, action = '') {
 export function showSuccess(message) {
     console.log(`Success: ${message}`);
 
-    const notification = createNotification('success', 'Success', message);
+    const notification = createNotification('success', 'Succès', message);
     showNotification(notification);
 }
 
@@ -37,7 +37,7 @@ export function showSuccess(message) {
 export function showLoading(message) {
     console.log(`Loading: ${message}`);
 
-    const notification = createNotification('loading', 'Please wait', message);
+    const notification = createNotification('loading', 'Veuillez patienter', message);
     showNotification(notification);
 
     // Return handle for manual dismissal
@@ -176,33 +176,33 @@ export function parseError(error) {
     // Authentication errors
     if (errorLower.includes('not authenticated') || errorLower.includes('failed to load tokens')) {
         return {
-            title: 'Not Logged In',
-            message: 'You need to log in to Educartable first.',
-            action: 'Click the "Login to Educartable" button to continue.'
+            title: 'Non connecté',
+            message: 'Vous devez d\'abord vous connecter à Educartable.',
+            action: 'Cliquez sur le bouton "Se connecter" pour continuer.'
         };
     }
 
     if (errorLower.includes('login timeout') || errorLower.includes('no response within')) {
         return {
-            title: 'Login Timeout',
-            message: 'Login took too long.',
-            action: 'Please try logging in again.'
+            title: 'Délai de connexion dépassé',
+            message: 'La connexion a pris trop de temps.',
+            action: 'Veuillez réessayer de vous connecter.'
         };
     }
 
     if (errorLower.includes('tokens not found') || errorLower.includes('invalid token')) {
         return {
-            title: 'Login Failed',
-            message: 'Could not complete login.',
-            action: 'Please check your credentials and try again.'
+            title: 'Échec de connexion',
+            message: 'Impossible de terminer la connexion.',
+            action: 'Veuillez vérifier vos identifiants et réessayer.'
         };
     }
 
     if (errorLower.includes('token refresh failed')) {
         return {
-            title: 'Session Expired',
-            message: 'Your login session has expired.',
-            action: 'Please log in again to continue.'
+            title: 'Session expirée',
+            message: 'Votre session de connexion a expiré.',
+            action: 'Veuillez vous reconnecter pour continuer.'
         };
     }
 
@@ -210,70 +210,70 @@ export function parseError(error) {
     if (errorLower.includes('network') || errorLower.includes('connection') ||
         errorLower.includes('timed out') || errorLower.includes('timeout')) {
         return {
-            title: 'Connection Error',
-            message: 'Cannot connect to Educartable.',
-            action: 'Please check your internet connection and try again.'
+            title: 'Erreur de connexion',
+            message: 'Impossible de se connecter à Educartable.',
+            action: 'Veuillez vérifier votre connexion Internet et réessayer.'
         };
     }
 
     if (errorLower.includes('rate limit')) {
         return {
-            title: 'Too Many Requests',
-            message: 'You are sending requests too quickly.',
-            action: 'Please wait a moment and try again.'
+            title: 'Trop de requêtes',
+            message: 'Vous envoyez des requêtes trop rapidement.',
+            action: 'Veuillez patienter un instant et réessayer.'
         };
     }
 
     // Configuration errors
-    if (errorLower.includes('sync directory not configured') ||
-        errorLower.includes('no folder selected')) {
+    if (errorLower.includes('sync directory not configured') || errorLower.includes('dossier de synchronisation non configuré') ||
+        errorLower.includes('no folder selected') || errorLower.includes('aucun dossier')) {
         return {
-            title: 'No Folder Selected',
-            message: 'You need to choose where to save your photos.',
-            action: 'Click the "Browse" button to select a folder.'
+            title: 'Aucun dossier sélectionné',
+            message: 'Vous devez choisir où enregistrer vos photos.',
+            action: 'Cliquez sur le bouton "Parcourir" pour sélectionner un dossier.'
         };
     }
 
     if (errorLower.includes('permission denied') || errorLower.includes('access denied')) {
         return {
-            title: 'Permission Denied',
-            message: 'Cannot write to the selected folder.',
-            action: 'Choose a different folder that you have permission to write to.'
+            title: 'Permission refusée',
+            message: 'Impossible d\'écrire dans le dossier sélectionné.',
+            action: 'Choisissez un dossier différent pour lequel vous avez les permissions d\'écriture.'
         };
     }
 
     if (errorLower.includes('no space') || errorLower.includes('disk full') ||
         errorLower.includes('insufficient space')) {
         return {
-            title: 'Not Enough Space',
-            message: 'Your disk is full or running low on space.',
-            action: 'Free up some space and try again.'
+            title: 'Espace insuffisant',
+            message: 'Votre disque est plein ou manque d\'espace.',
+            action: 'Libérez de l\'espace et réessayez.'
         };
     }
 
     // Sync errors
     if (errorLower.includes('failed to get user info')) {
         return {
-            title: 'Cannot Access Account',
-            message: 'Could not retrieve your account information.',
-            action: 'Please try logging in again.'
+            title: 'Impossible d\'accéder au compte',
+            message: 'Impossible de récupérer les informations de votre compte.',
+            action: 'Veuillez réessayer de vous connecter.'
         };
     }
 
     if (errorLower.includes('failed to fetch activities')) {
         return {
-            title: 'Cannot Load Activities',
-            message: 'Could not retrieve your activities from Educartable.',
-            action: 'Please check your connection and try again.'
+            title: 'Impossible de charger les activités',
+            message: 'Impossible de récupérer vos activités depuis Educartable.',
+            action: 'Veuillez vérifier votre connexion et réessayer.'
         };
     }
 
     if (errorLower.includes('server error') || errorLower.includes('500') ||
         errorLower.includes('503') || errorLower.includes('502')) {
         return {
-            title: 'Server Error',
-            message: 'Educartable servers are having issues.',
-            action: 'Please try again later.'
+            title: 'Erreur serveur',
+            message: 'Les serveurs Educartable rencontrent des problèmes.',
+            action: 'Veuillez réessayer plus tard.'
         };
     }
 
@@ -284,17 +284,17 @@ export function parseError(error) {
         const specificMsg = colonIndex > 0 ? errorStr.substring(colonIndex + 1).trim() : errorStr;
 
         return {
-            title: 'Operation Failed',
+            title: 'Échec de l\'opération',
             message: specificMsg,
-            action: 'Please try again or contact support if the problem persists.'
+            action: 'Veuillez réessayer ou contacter le support si le problème persiste.'
         };
     }
 
     // Unknown error
     return {
-        title: 'Unexpected Error',
+        title: 'Erreur inattendue',
         message: errorStr,
-        action: 'Please try again. If the problem persists, contact support.'
+        action: 'Veuillez réessayer. Si le problème persiste, contactez le support.'
     };
 }
 
