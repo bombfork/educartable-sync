@@ -26,8 +26,8 @@
                     Status: <strong id="auth-status" class="status-disconnected">Not connected</strong>
                 </p>
                 <div>
-                    <button id="login-btn">Login to Educartable</button>
-                    <button id="logout-btn" class="secondary hidden">Logout</button>
+                    <button id="login-btn" data-tooltip="Connect to your Educartable account">Login to Educartable</button>
+                    <button id="logout-btn" class="secondary hidden" data-tooltip="Disconnect from Educartable">Logout</button>
                 </div>
             </section>
 
@@ -37,20 +37,23 @@
 
                 <label>
                     📁 Sync Directory
+                    <small>Choose where to save your photos and videos</small>
                     <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;">
-                        <input type="text" id="sync-path" readonly placeholder="No folder selected">
-                        <button id="browse-btn" class="secondary">Browse</button>
+                        <input type="text" id="sync-path" readonly placeholder="No folder selected" data-tooltip="Click Browse to select a folder">
+                        <button id="browse-btn" class="secondary" data-tooltip="Select where to save your media files">Browse</button>
                     </div>
                 </label>
 
                 <label>
                     <input type="checkbox" id="include-videos" role="switch" checked>
                     Include videos (MOV, MP4, etc.)
+                    <small>Download videos in addition to photos</small>
                 </label>
 
                 <label>
                     <input type="checkbox" id="organize-by-date" role="switch" checked>
                     Organize by date
+                    <small>Create folders organized by activity date and title</small>
                 </label>
             </section>
 
@@ -58,9 +61,10 @@
             <section id="sync-section">
                 <h2>📥 Synchronization</h2>
 
-                <button id="sync-btn" disabled>
+                <button id="sync-btn" disabled data-tooltip="Download all photos and videos from Educartable">
                     Synchronize Now
                 </button>
+                <small>Downloads new media files and skips existing ones</small>
 
                 <div id="sync-progress-container" class="hidden">
                     <progress id="sync-progress" value="0" max="100"></progress>

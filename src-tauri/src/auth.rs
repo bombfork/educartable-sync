@@ -22,19 +22,19 @@ pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
     let entry = Entry::new(SERVICE_NAME, USERNAME)
         .map_err(|e| {
             log::error!("Keyring entry creation failed: {}", e);
-            format!("Keyring error: {}", e)
+            "Cannot access system keyring. Please check your system permissions.".to_string()
         })?;
 
     let tokens_json = serde_json::to_string(tokens)
         .map_err(|e| {
             log::error!("Token serialization failed: {}", e);
-            format!("Serialization error: {}", e)
+            "Failed to save login information. Please try again.".to_string()
         })?;
 
     entry.set_password(&tokens_json)
         .map_err(|e| {
             log::error!("Failed to store tokens in keyring: {}", e);
-            format!("Failed to store tokens: {}", e)
+            "Cannot save login credentials. Please check your system permissions.".to_string()
         })?;
 
     log::info!("Authentication tokens stored successfully");
@@ -48,19 +48,19 @@ pub fn load_tokens() -> Result<AuthTokens, String> {
     let entry = Entry::new(SERVICE_NAME, USERNAME)
         .map_err(|e| {
             log::error!("Keyring entry creation failed: {}", e);
-            format!("Keyring error: {}", e)
+            "Cannot access system keyring. Please check your system permissions.".to_string()
         })?;
 
     let tokens_json = entry.get_password()
         .map_err(|e| {
             log::warn!("Failed to load tokens from keyring: {}", e);
-            format!("Failed to load tokens: {}", e)
+            "Not authenticated. Please log in first.".to_string()
         })?;
 
     let tokens: AuthTokens = serde_json::from_str(&tokens_json)
         .map_err(|e| {
             log::error!("Token deserialization failed: {}", e);
-            format!("Deserialization error: {}", e)
+            "Login credentials are corrupted. Please log in again.".to_string()
         })?;
 
     log::debug!("Authentication tokens loaded successfully");
@@ -74,13 +74,13 @@ pub fn delete_tokens() -> Result<(), String> {
     let entry = Entry::new(SERVICE_NAME, USERNAME)
         .map_err(|e| {
             log::error!("Keyring entry creation failed: {}", e);
-            format!("Keyring error: {}", e)
+            "Cannot access system keyring. Please check your system permissions.".to_string()
         })?;
 
     entry.delete_password()
         .map_err(|e| {
             log::error!("Failed to delete tokens from keyring: {}", e);
-            format!("Failed to delete tokens: {}", e)
+            "Failed to clear login credentials. You may need to log in again manually.".to_string()
         })?;
 
     log::info!("Authentication tokens deleted successfully");
@@ -107,18 +107,18 @@ pub async fn refresh_tokens(refresh_token: &str) -> Result<AuthTokens, String> {
         .await
         .map_err(|e| {
             log::error!("Token refresh request failed: {}", e);
-            format!("Refresh request failed: {}", e)
+            "Cannot connect to authentication server. Check your internet connection.".to_string()
         })?;
 
     if !response.status().is_success() {
         log::error!("Token refresh failed with status: {}", response.status());
-        return Err("Token refresh failed".to_string());
+        return Err("Your session has expired. Please log in again.".to_string());
     }
 
     let tokens: AuthTokens = response.json().await
         .map_err(|e| {
             log::error!("Failed to parse refreshed tokens: {}", e);
-            format!("Failed to parse tokens: {}", e)
+            "Authentication server error. Please try logging in again.".to_string()
         })?;
 
     // Store new tokens
@@ -247,7 +247,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     webview.eval(js_code)
         .map_err(|e| {
             log::error!("Failed to inject JavaScript: {}", e);
-            format!("Failed to inject JavaScript: {}", e)
+            "Login window error. Please try again.".to_string()
         })?;
 
     // Wait for the tokens with timeout
@@ -256,13 +256,13 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
         token_rx.recv_timeout(Duration::from_secs(5))
             .map_err(|_| {
                 log::error!("Timeout waiting for tokens from webview");
-                "Timeout waiting for tokens".to_string()
+                "Login completion timeout. Please try again.".to_string()
             })
     })
     .await
     .map_err(|e| {
         log::error!("Task error during token extraction: {}", e);
-        format!("Task error: {}", e)
+        "Internal error during login. Please try again.".to_string()
     })??;
 
     // Clear the global state
@@ -278,7 +278,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     // Check if tokens were found
     if tokens_str == "null" {
         log::error!("Tokens not found in localStorage");
-        return Err("Tokens not found in localStorage".to_string());
+        return Err("Login failed. Please check your credentials and try again.".to_string());
     }
 
     // Parse the JSON string into AuthTokens
@@ -286,7 +286,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     let tokens: AuthTokens = serde_json::from_str(&tokens_str)
         .map_err(|e| {
             log::error!("Failed to parse tokens from JSON: {}", e);
-            format!("Failed to parse tokens: {}", e)
+            "Login data error. Please try again.".to_string()
         })?;
 
     // Store tokens securely in the OS keyring

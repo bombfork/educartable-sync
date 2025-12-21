@@ -16,7 +16,7 @@ fn get_config_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|e| {
             log::error!("Failed to get app data directory: {}", e);
-            format!("Failed to get app data directory: {}", e)
+            "Cannot access application data directory. Please check permissions.".to_string()
         })?;
 
     // Create directory if it doesn't exist
@@ -24,7 +24,7 @@ fn get_config_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&app_data_dir)
         .map_err(|e| {
             log::error!("Failed to create app data directory: {}", e);
-            format!("Failed to create app data directory: {}", e)
+            "Cannot create application data directory. Please check disk space and permissions.".to_string()
         })?;
 
     let config_path = app_data_dir.join("config.json");
@@ -53,13 +53,13 @@ pub async fn load_config(app_handle: AppHandle) -> Result<AppConfig, String> {
     let config_json = fs::read_to_string(&config_path)
         .map_err(|e| {
             log::error!("Failed to read config file: {}", e);
-            format!("Failed to read config file: {}", e)
+            "Cannot read configuration file. Please check permissions.".to_string()
         })?;
 
     let config: AppConfig = serde_json::from_str(&config_json)
         .map_err(|e| {
             log::error!("Failed to parse config file: {}", e);
-            format!("Failed to parse config file: {}", e)
+            "Configuration file is corrupted. Settings may be reset.".to_string()
         })?;
 
     log::info!("Configuration loaded successfully");
@@ -76,7 +76,7 @@ pub async fn save_config(app_handle: AppHandle, config: AppConfig) -> Result<(),
     let config_json = serde_json::to_string_pretty(&config)
         .map_err(|e| {
             log::error!("Failed to serialize config: {}", e);
-            format!("Failed to serialize config: {}", e)
+            "Cannot prepare configuration for saving. Please try again.".to_string()
         })?;
 
     // Write to file
@@ -84,7 +84,7 @@ pub async fn save_config(app_handle: AppHandle, config: AppConfig) -> Result<(),
     fs::write(&config_path, config_json)
         .map_err(|e| {
             log::error!("Failed to write config file: {}", e);
-            format!("Failed to write config file: {}", e)
+            "Cannot save configuration. Please check disk space and permissions.".to_string()
         })?;
 
     log::info!("Configuration saved successfully");

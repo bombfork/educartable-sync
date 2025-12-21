@@ -260,7 +260,7 @@ impl SyncEngine {
         let parent_id = self.api_client.get_parent_id().await
             .map_err(|e| {
                 log::error!("Failed to get user info: {}", e);
-                format!("Failed to get user info: {}", e)
+                "Cannot access your account information. Please check your connection.".to_string()
             })?;
 
         // Fetch all activities
@@ -269,7 +269,7 @@ impl SyncEngine {
         let activities = self.api_client.fetch_all_activities(parent_id).await
             .map_err(|e| {
                 log::error!("Failed to fetch activities: {}", e);
-                format!("Failed to fetch activities: {}", e)
+                "Cannot load activities from Educartable. Please check your connection.".to_string()
             })?;
 
         stats.total_activities = activities.len() as u32;
@@ -392,13 +392,13 @@ pub async fn start_sync(
     let tokens = crate::auth::load_tokens()
         .map_err(|e| {
             log::error!("Not authenticated: {}", e);
-            format!("Not authenticated: {}", e)
+            e  // Pass through the user-friendly message from auth module
         })?;
 
     // Validate sync path
     if config.sync_path.as_os_str().is_empty() {
         log::error!("Sync directory not configured");
-        return Err("Sync directory not configured".to_string());
+        return Err("Sync directory not configured. Please select a folder first.".to_string());
     }
 
     log::info!("Sync directory: {:?}", config.sync_path);
@@ -414,7 +414,7 @@ pub async fn start_sync(
     let result = sync_engine.sync_all().await
         .map_err(|e| {
             log::error!("Sync failed: {}", e);
-            format!("Sync failed: {}", e)
+            e.to_string()
         });
 
     match &result {

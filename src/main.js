@@ -9,6 +9,9 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+// Import notification system
+import { showError, showSuccess, showLoading, showInfo, handleError, parseError } from './notifications.js';
+
 // Application state
 let isAuthenticated = false;
 let config = null;
@@ -83,19 +86,30 @@ async function handleLogin() {
     const originalText = loginBtn.textContent;
     loginBtn.textContent = 'Logging in...';
 
+    // Show loading notification
+    const loadingNotification = showLoading('Opening login window...');
+
     try {
         // Call the Tauri authenticate command (opens webview)
         await invoke('authenticate');
 
+        // Dismiss loading notification
+        loadingNotification.dismiss();
+
         console.log('Login successful');
         isAuthenticated = true;
         updateAuthUI();
+
+        // Show success notification
+        showSuccess('Successfully logged in to Educartable!');
     } catch (error) {
         console.error('Login failed:', error);
 
-        // Show error to user
-        const errorMessage = typeof error === 'string' ? error : 'An unexpected error occurred during login';
-        alert('Login failed: ' + errorMessage);
+        // Dismiss loading notification
+        loadingNotification.dismiss();
+
+        // Show user-friendly error
+        handleError(error, 'login');
 
         isAuthenticated = false;
         updateAuthUI();
@@ -129,12 +143,14 @@ async function handleLogout() {
         console.log('Logout successful');
         isAuthenticated = false;
         updateAuthUI();
+
+        // Show success notification
+        showSuccess('Successfully logged out');
     } catch (error) {
         console.error('Logout failed:', error);
 
-        // Show error to user
-        const errorMessage = typeof error === 'string' ? error : 'An unexpected error occurred during logout';
-        alert('Logout failed: ' + errorMessage);
+        // Show user-friendly error
+        handleError(error, 'logout');
     } finally {
         // Reset button state
         logoutBtn.disabled = false;
@@ -231,7 +247,7 @@ async function saveConfig() {
         console.log('Config saved successfully');
     } catch (error) {
         console.error('Failed to save config:', error);
-        alert('Failed to save configuration: ' + error);
+        handleError(error, 'save configuration');
     }
 }
 
@@ -263,13 +279,16 @@ async function handleBrowse() {
 
             // Save config
             await saveConfig();
+
+            // Show success notification
+            showSuccess('Sync folder selected successfully');
         }
     } catch (error) {
         console.error('Failed to select directory:', error);
 
-        // Only show alert if it's not a cancellation
+        // Only show error if it's not a cancellation
         if (error !== 'No folder selected') {
-            alert('Failed to select directory: ' + error);
+            handleError(error, 'select directory');
         }
     } finally {
         // Reset button state
@@ -351,7 +370,8 @@ async function handleSync() {
 
     // Validate configuration
     if (!config.sync_path) {
-        alert('Please select a sync directory first');
+        const parsed = parseError('Sync directory not configured');
+        showError(parsed.title, parsed.message, parsed.action);
         return;
     }
 
@@ -378,12 +398,15 @@ async function handleSync() {
 
         // Show results
         displaySyncResults(stats);
+
+        // Show success notification with stats
+        const successMsg = `Downloaded ${stats.downloaded} files, skipped ${stats.skipped}, ${stats.failed > 0 ? `${stats.failed} failed` : 'no failures'}`;
+        showSuccess(successMsg);
     } catch (error) {
         console.error('Sync failed:', error);
 
-        // Show error to user
-        const errorMessage = typeof error === 'string' ? error : 'An unexpected error occurred during sync';
-        alert('Sync failed: ' + errorMessage);
+        // Show user-friendly error
+        handleError(error, 'sync');
 
         // Hide progress on error
         progressContainer.classList.add('hidden');
