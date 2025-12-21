@@ -6,6 +6,7 @@ use std::sync::{Mutex, mpsc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::models::AuthTokens;
 use keyring::Entry;
+use reqwest::Client;
 
 // Global state to store tokens during extraction
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
@@ -51,6 +52,55 @@ pub fn delete_tokens() -> Result<(), String> {
         .map_err(|e| format!("Failed to delete tokens: {}", e))?;
 
     Ok(())
+}
+
+/// Refresh expired access tokens using the refresh_token
+pub async fn refresh_tokens(refresh_token: &str) -> Result<AuthTokens, String> {
+    let client = Client::new();
+
+    let params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", "educlasse"),
+    ];
+
+    let response = client
+        .post("https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token")
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| format!("Refresh request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err("Token refresh failed".to_string());
+    }
+
+    let tokens: AuthTokens = response.json().await
+        .map_err(|e| format!("Failed to parse tokens: {}", e))?;
+
+    // Store new tokens
+    store_tokens(&tokens)?;
+
+    Ok(tokens)
+}
+
+/// Get a valid access token, refreshing if necessary
+pub async fn get_valid_token() -> Result<String, String> {
+    let tokens = load_tokens()?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    if tokens.expires_at > now + 60 {
+        // Token is still valid (with 60s buffer)
+        Ok(tokens.access_token)
+    } else {
+        // Token expired, refresh it
+        let new_tokens = refresh_tokens(&tokens.refresh_token).await?;
+        Ok(new_tokens.access_token)
+    }
 }
 
 #[tauri::command]
