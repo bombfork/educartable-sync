@@ -43,8 +43,6 @@ pub async fn load_config(app_handle: AppHandle) -> Result<AppConfig, String> {
         log::info!("Config file does not exist, returning default config");
         return Ok(AppConfig {
             sync_path: PathBuf::new(),
-            include_videos: true,
-            organize_by_date: true,
         });
     }
 

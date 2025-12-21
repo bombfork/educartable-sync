@@ -45,10 +45,9 @@ function setupEventListeners() {
     document.getElementById('login-btn').addEventListener('click', handleLogin);
     document.getElementById('logout-btn').addEventListener('click', handleLogout);
 
-    // Configuration buttons
+    // Configuration buttons and inputs
     document.getElementById('browse-btn').addEventListener('click', handleBrowse);
-    document.getElementById('include-videos').addEventListener('change', handleIncludeVideosChange);
-    document.getElementById('organize-by-date').addEventListener('change', handleOrganizeByDateChange);
+    document.getElementById('sync-path').addEventListener('click', handleBrowse);
 
     // Sync button
     document.getElementById('sync-btn').addEventListener('click', handleSync);
@@ -208,9 +207,7 @@ async function loadConfig() {
 
         // Use default config
         config = {
-            sync_path: '',
-            include_videos: true,
-            organize_by_date: true
+            sync_path: ''
         };
         displayConfig();
     }
@@ -221,8 +218,6 @@ async function loadConfig() {
  */
 function displayConfig() {
     const syncPathInput = document.getElementById('sync-path');
-    const includeVideosCheckbox = document.getElementById('include-videos');
-    const organizeByDateCheckbox = document.getElementById('organize-by-date');
 
     // Display sync path
     if (config.sync_path) {
@@ -232,10 +227,6 @@ function displayConfig() {
         syncPathInput.value = '';
         syncPathInput.placeholder = 'No folder selected';
     }
-
-    // Display checkbox values
-    includeVideosCheckbox.checked = config.include_videos;
-    organizeByDateCheckbox.checked = config.organize_by_date;
 }
 
 /**
@@ -298,24 +289,6 @@ async function handleBrowse() {
 }
 
 /**
- * Handle include videos checkbox change
- */
-async function handleIncludeVideosChange(event) {
-    console.log('Include videos changed:', event.target.checked);
-    config.include_videos = event.target.checked;
-    await saveConfig();
-}
-
-/**
- * Handle organize by date checkbox change
- */
-async function handleOrganizeByDateChange(event) {
-    console.log('Organize by date changed:', event.target.checked);
-    config.organize_by_date = event.target.checked;
-    await saveConfig();
-}
-
-/**
  * Set up listener for sync progress events from backend
  */
 async function setupProgressListener() {
@@ -330,31 +303,16 @@ async function setupProgressListener() {
  * Update progress UI with current sync status
  */
 function updateProgress(progress) {
-    const progressBar = document.getElementById('sync-progress');
+    const progressFill = document.getElementById('sync-progress-fill');
     const progressText = document.getElementById('progress-text');
     const currentFile = document.getElementById('current-file');
 
-    // Update HTML5 progress bar (Pico CSS styles it automatically)
-    progressBar.value = progress.percentage;
-    progressBar.max = 100;
+    // Update custom progress bar fill width
+    progressFill.style.width = `${progress.percentage}%`;
 
     // Update text
     progressText.textContent = `${progress.current} / ${progress.total} files (${Math.round(progress.percentage)}%)`;
     currentFile.textContent = progress.current_file ? `📄 ${progress.current_file}` : '';
-}
-
-/**
- * Display sync results after completion
- */
-function displaySyncResults(stats) {
-    const syncResults = document.getElementById('sync-results');
-
-    document.getElementById('result-total').textContent = stats.total_media;
-    document.getElementById('result-downloaded').textContent = stats.downloaded;
-    document.getElementById('result-skipped').textContent = stats.skipped;
-    document.getElementById('result-failed').textContent = stats.failed;
-
-    syncResults.classList.remove('hidden');
 }
 
 /**
@@ -365,8 +323,6 @@ async function handleSync() {
     console.log('Sync initiated...');
 
     const syncBtn = document.getElementById('sync-btn');
-    const progressContainer = document.getElementById('sync-progress-container');
-    const syncResults = document.getElementById('sync-results');
 
     // Validate configuration
     if (!config.sync_path) {
@@ -381,12 +337,8 @@ async function handleSync() {
     const originalText = syncBtn.textContent;
     syncBtn.textContent = 'Syncing...';
 
-    // Show progress, hide results
-    progressContainer.classList.remove('hidden');
-    syncResults.classList.add('hidden');
-
     // Reset progress
-    document.getElementById('sync-progress').value = 0;
+    document.getElementById('sync-progress-fill').style.width = '0%';
     document.getElementById('progress-text').textContent = 'Starting...';
     document.getElementById('current-file').textContent = '';
 
@@ -396,9 +348,6 @@ async function handleSync() {
 
         console.log('Sync completed successfully:', stats);
 
-        // Show results
-        displaySyncResults(stats);
-
         // Show success notification with stats
         const successMsg = `Downloaded ${stats.downloaded} files, skipped ${stats.skipped}, ${stats.failed > 0 ? `${stats.failed} failed` : 'no failures'}`;
         showSuccess(successMsg);
@@ -407,9 +356,6 @@ async function handleSync() {
 
         // Show user-friendly error
         handleError(error, 'sync');
-
-        // Hide progress on error
-        progressContainer.classList.add('hidden');
     } finally {
         // Re-enable button based on auth status
         syncBtn.disabled = !isAuthenticated;

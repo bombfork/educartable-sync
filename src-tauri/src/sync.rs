@@ -297,10 +297,6 @@ impl SyncEngine {
             for media in &activity.medias {
                 processed_media += 1;
 
-                // Skip videos if not configured to include them
-                // Note: config.include_videos check would need to be passed to sync_all
-                // For now, we'll download everything
-
                 // Prepare filename for progress display
                 let filename = format!("{}{}", media.name, media.extension);
                 log::debug!("Processing media {}/{}: {}", processed_media, total_media, filename);

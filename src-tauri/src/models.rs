@@ -88,10 +88,8 @@ pub struct SyncStats {
     pub failed: u32,
 }
 
-// Issue #29: App Configuration for video support
+// App Configuration
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub sync_path: PathBuf,
-    pub include_videos: bool,
-    pub organize_by_date: bool,
 }

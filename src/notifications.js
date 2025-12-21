@@ -16,11 +16,6 @@ export function showError(title, message, action = '') {
 
     const notification = createNotification('error', title, message, action);
     showNotification(notification);
-
-    // Auto-dismiss after 10 seconds for errors
-    setTimeout(() => {
-        dismissNotification(notification);
-    }, 10000);
 }
 
 /**
@@ -32,11 +27,6 @@ export function showSuccess(message) {
 
     const notification = createNotification('success', 'Success', message);
     showNotification(notification);
-
-    // Auto-dismiss after 4 seconds for success
-    setTimeout(() => {
-        dismissNotification(notification);
-    }, 4000);
 }
 
 /**
@@ -66,11 +56,6 @@ export function showInfo(title, message) {
 
     const notification = createNotification('info', title, message);
     showNotification(notification);
-
-    // Auto-dismiss after 6 seconds for info
-    setTimeout(() => {
-        dismissNotification(notification);
-    }, 6000);
 }
 
 /**
@@ -108,7 +93,7 @@ function createNotification(type, title, message, action = '') {
             <div class="notification-message">${escapeHtml(message)}</div>
             ${action ? `<div class="notification-action">${escapeHtml(action)}</div>` : ''}
         </div>
-        ${type !== 'loading' ? '<button class="notification-close" aria-label="Close">&times;</button>' : ''}
+        <button class="notification-close" aria-label="Close">&times;</button>
     `;
 
     // Add close button handler (if present)

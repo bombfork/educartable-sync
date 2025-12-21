@@ -10,10 +10,10 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Educartable Downloader",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
+        "title": "Educartable Sync",
+        "width": 900,
+        "height": 650,
+        "resizable": false,
         "fullscreen": false
       }
     ],

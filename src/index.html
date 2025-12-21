@@ -19,67 +19,46 @@
                 <p>Download and sync photos from your child's school activities</p>
             </header>
 
-            <!-- Authentication Section -->
-            <section id="auth-section">
-                <h2>👤 Authentication</h2>
-                <p>
-                    Status: <strong id="auth-status" class="status-disconnected">Not connected</strong>
-                </p>
-                <div>
-                    <button id="login-btn" data-tooltip="Connect to your Educartable account">Login to Educartable</button>
-                    <button id="logout-btn" class="secondary hidden" data-tooltip="Disconnect from Educartable">Logout</button>
-                </div>
-            </section>
-
-            <!-- Configuration Section -->
-            <section id="config-section">
-                <h2>⚙️ Configuration</h2>
-
-                <label>
-                    📁 Sync Directory
-                    <small>Choose where to save your photos and videos</small>
-                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;">
-                        <input type="text" id="sync-path" readonly placeholder="No folder selected" data-tooltip="Click Browse to select a folder">
-                        <button id="browse-btn" class="secondary" data-tooltip="Select where to save your media files">Browse</button>
+            <!-- Auth and Config Container -->
+            <div class="two-column-layout">
+                <!-- Authentication Section -->
+                <section id="auth-section">
+                    <h2>👤 Authentication</h2>
+                    <div style="display: flex; align-items: center; gap: 1rem; margin-top: 2.5rem;">
+                        <span>Status: <strong id="auth-status" class="status-disconnected">Not connected</strong></span>
+                        <button id="login-btn">Login to Educartable</button>
+                        <button id="logout-btn" class="secondary hidden" style="margin: 0; padding: 0.25rem 0.75rem;">Logout</button>
                     </div>
-                </label>
+                </section>
 
-                <label>
-                    <input type="checkbox" id="include-videos" role="switch" checked>
-                    Include videos (MOV, MP4, etc.)
-                    <small>Download videos in addition to photos</small>
-                </label>
+                <!-- Configuration Section -->
+                <section id="config-section">
+                    <h2>⚙️ Configuration</h2>
 
-                <label>
-                    <input type="checkbox" id="organize-by-date" role="switch" checked>
-                    Organize by date
-                    <small>Create folders organized by activity date and title</small>
-                </label>
-            </section>
+                    <div>
+                        <label style="margin-bottom: 0.5rem;">📁 Sync Directory</label>
+                        <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center;">
+                            <input type="text" id="sync-path" readonly placeholder="No folder selected" style="cursor: pointer; margin: 0;">
+                            <button id="browse-btn" class="secondary" style="margin: 0;">Browse</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
 
             <!-- Sync Section -->
             <section id="sync-section">
                 <h2>📥 Synchronization</h2>
 
-                <button id="sync-btn" disabled data-tooltip="Download all photos and videos from Educartable">
+                <button id="sync-btn" disabled>
                     Synchronize Now
                 </button>
-                <small>Downloads new media files and skips existing ones</small>
 
-                <div id="sync-progress-container" class="hidden">
-                    <progress id="sync-progress" value="0" max="100"></progress>
-                    <p id="progress-text">0 / 0 files</p>
+                <div id="sync-progress-container">
+                    <div class="custom-progress-bar">
+                        <div id="sync-progress-fill" class="progress-fill"></div>
+                        <div id="progress-text" class="progress-text">0 / 0 files</div>
+                    </div>
                     <small id="current-file"></small>
-                </div>
-
-                <div id="sync-results" class="hidden">
-                    <h3>Last Sync Results</h3>
-                    <ul>
-                        <li>Total media: <strong id="result-total">0</strong></li>
-                        <li>Downloaded: <strong id="result-downloaded">0</strong></li>
-                        <li>Skipped: <strong id="result-skipped">0</strong></li>
-                        <li>Failed: <strong id="result-failed">0</strong></li>
-                    </ul>
                 </div>
             </section>
         </article>
