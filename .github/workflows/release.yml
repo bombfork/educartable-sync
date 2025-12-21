@@ -52,6 +52,7 @@ jobs:
             ${{ runner.os }}-tauri-cli-
 
       - name: Install Tauri CLI
+        shell: bash
         run: |
           if ! command -v cargo-tauri &> /dev/null; then
             cargo install tauri-cli --version "^2.0.0" --locked
