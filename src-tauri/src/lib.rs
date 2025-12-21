@@ -14,7 +14,18 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, auth::authenticate, auth::submit_tokens, auth::logout, auth::is_authenticated])
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            auth::authenticate,
+            auth::submit_tokens,
+            auth::logout,
+            auth::is_authenticated,
+            config::load_config,
+            config::save_config,
+            config::select_sync_directory,
+            sync::start_sync
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

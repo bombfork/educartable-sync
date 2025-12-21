@@ -1,48 +1,86 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
-    <script type="module" src="/main.js" defer></script>
-  </head>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Educartable Sync</title>
 
-  <body>
+    <!-- Pico CSS v2 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
     <main class="container">
-      <h1>Welcome to Tauri</h1>
+        <article>
+            <header>
+                <h1>📚 Educartable Sync</h1>
+                <p>Download and sync photos from your child's school activities</p>
+            </header>
 
-      <div class="row">
-        <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-          target="_blank"
-        >
-          <img
-            src="/assets/javascript.svg"
-            class="logo vanilla"
-            alt="JavaScript logo"
-          />
-        </a>
-      </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+            <!-- Authentication Section -->
+            <section id="auth-section">
+                <h2>👤 Authentication</h2>
+                <p>
+                    Status: <strong id="auth-status" class="status-disconnected">Not connected</strong>
+                </p>
+                <div>
+                    <button id="login-btn">Login to Educartable</button>
+                    <button id="logout-btn" class="secondary hidden">Logout</button>
+                </div>
+            </section>
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p id="greet-msg"></p>
+            <!-- Configuration Section -->
+            <section id="config-section">
+                <h2>⚙️ Configuration</h2>
 
-      <div class="row" style="margin-top: 2rem;">
-        <div id="auth-section">
-          <button id="login-btn" type="button">Login to Educartable</button>
-          <button id="logout-btn" type="button" style="display: none;">Logout</button>
-        </div>
-      </div>
-      <p id="auth-status"></p>
-      <p id="login-msg"></p>
+                <label>
+                    📁 Sync Directory
+                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;">
+                        <input type="text" id="sync-path" readonly placeholder="No folder selected">
+                        <button id="browse-btn" class="secondary">Browse</button>
+                    </div>
+                </label>
+
+                <label>
+                    <input type="checkbox" id="include-videos" role="switch" checked>
+                    Include videos (MOV, MP4, etc.)
+                </label>
+
+                <label>
+                    <input type="checkbox" id="organize-by-date" role="switch" checked>
+                    Organize by date
+                </label>
+            </section>
+
+            <!-- Sync Section -->
+            <section id="sync-section">
+                <h2>📥 Synchronization</h2>
+
+                <button id="sync-btn" disabled>
+                    Synchronize Now
+                </button>
+
+                <div id="sync-progress-container" class="hidden">
+                    <progress id="sync-progress" value="0" max="100"></progress>
+                    <p id="progress-text">0 / 0 files</p>
+                    <small id="current-file"></small>
+                </div>
+
+                <div id="sync-results" class="hidden">
+                    <h3>Last Sync Results</h3>
+                    <ul>
+                        <li>Total media: <strong id="result-total">0</strong></li>
+                        <li>Downloaded: <strong id="result-downloaded">0</strong></li>
+                        <li>Skipped: <strong id="result-skipped">0</strong></li>
+                        <li>Failed: <strong id="result-failed">0</strong></li>
+                    </ul>
+                </div>
+            </section>
+        </article>
     </main>
-  </body>
+
+    <script src="main.js" type="module"></script>
+</body>
 </html>

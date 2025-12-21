@@ -246,3 +246,29 @@ pub fn is_video(media: &Media) -> bool {
         ".3gp" | ".ogv"
     )
 }
+
+// Issue #34: Tauri command for starting sync
+#[tauri::command]
+pub async fn start_sync(
+    app_handle: AppHandle,
+    config: crate::models::AppConfig,
+) -> Result<SyncStats, String> {
+    // Load authentication tokens
+    let tokens = crate::auth::load_tokens()
+        .map_err(|e| format!("Not authenticated: {}", e))?;
+
+    // Validate sync path
+    if config.sync_path.as_os_str().is_empty() {
+        return Err("Sync directory not configured".to_string());
+    }
+
+    // Create API client
+    let api_client = EducartableClient::new(tokens.access_token);
+
+    // Create sync engine
+    let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
+
+    // Run synchronization
+    sync_engine.sync_all().await
+        .map_err(|e| format!("Sync failed: {}", e))
+}
