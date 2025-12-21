@@ -17,45 +17,80 @@ const USERNAME: &str = "auth_tokens";
 
 /// Store authentication tokens securely in the OS keyring
 pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
+    log::debug!("Attempting to store authentication tokens in keyring");
+
     let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| format!("Keyring error: {}", e))?;
+        .map_err(|e| {
+            log::error!("Keyring entry creation failed: {}", e);
+            format!("Keyring error: {}", e)
+        })?;
 
     let tokens_json = serde_json::to_string(tokens)
-        .map_err(|e| format!("Serialization error: {}", e))?;
+        .map_err(|e| {
+            log::error!("Token serialization failed: {}", e);
+            format!("Serialization error: {}", e)
+        })?;
 
     entry.set_password(&tokens_json)
-        .map_err(|e| format!("Failed to store tokens: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to store tokens in keyring: {}", e);
+            format!("Failed to store tokens: {}", e)
+        })?;
 
+    log::info!("Authentication tokens stored successfully");
     Ok(())
 }
 
 /// Load authentication tokens from the OS keyring
 pub fn load_tokens() -> Result<AuthTokens, String> {
+    log::debug!("Attempting to load authentication tokens from keyring");
+
     let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| format!("Keyring error: {}", e))?;
+        .map_err(|e| {
+            log::error!("Keyring entry creation failed: {}", e);
+            format!("Keyring error: {}", e)
+        })?;
 
     let tokens_json = entry.get_password()
-        .map_err(|e| format!("Failed to load tokens: {}", e))?;
+        .map_err(|e| {
+            log::warn!("Failed to load tokens from keyring: {}", e);
+            format!("Failed to load tokens: {}", e)
+        })?;
 
     let tokens: AuthTokens = serde_json::from_str(&tokens_json)
-        .map_err(|e| format!("Deserialization error: {}", e))?;
+        .map_err(|e| {
+            log::error!("Token deserialization failed: {}", e);
+            format!("Deserialization error: {}", e)
+        })?;
 
+    log::debug!("Authentication tokens loaded successfully");
     Ok(tokens)
 }
 
 /// Delete authentication tokens from the OS keyring
 pub fn delete_tokens() -> Result<(), String> {
+    log::debug!("Attempting to delete authentication tokens from keyring");
+
     let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| format!("Keyring error: {}", e))?;
+        .map_err(|e| {
+            log::error!("Keyring entry creation failed: {}", e);
+            format!("Keyring error: {}", e)
+        })?;
 
     entry.delete_password()
-        .map_err(|e| format!("Failed to delete tokens: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to delete tokens from keyring: {}", e);
+            format!("Failed to delete tokens: {}", e)
+        })?;
 
+    log::info!("Authentication tokens deleted successfully");
     Ok(())
 }
 
 /// Refresh expired access tokens using the refresh_token
 pub async fn refresh_tokens(refresh_token: &str) -> Result<AuthTokens, String> {
+    log::info!("Attempting to refresh authentication tokens");
+
     let client = Client::new();
 
     let params = [
@@ -64,28 +99,39 @@ pub async fn refresh_tokens(refresh_token: &str) -> Result<AuthTokens, String> {
         ("client_id", "educlasse"),
     ];
 
+    log::debug!("Sending token refresh request to Keycloak");
     let response = client
         .post("https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token")
         .form(&params)
         .send()
         .await
-        .map_err(|e| format!("Refresh request failed: {}", e))?;
+        .map_err(|e| {
+            log::error!("Token refresh request failed: {}", e);
+            format!("Refresh request failed: {}", e)
+        })?;
 
     if !response.status().is_success() {
+        log::error!("Token refresh failed with status: {}", response.status());
         return Err("Token refresh failed".to_string());
     }
 
     let tokens: AuthTokens = response.json().await
-        .map_err(|e| format!("Failed to parse tokens: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to parse refreshed tokens: {}", e);
+            format!("Failed to parse tokens: {}", e)
+        })?;
 
     // Store new tokens
     store_tokens(&tokens)?;
 
+    log::info!("Authentication tokens refreshed successfully");
     Ok(tokens)
 }
 
 /// Get a valid access token, refreshing if necessary
 pub async fn get_valid_token() -> Result<String, String> {
+    log::debug!("Getting valid access token");
+
     let tokens = load_tokens()?;
 
     let now = SystemTime::now()
@@ -95,9 +141,11 @@ pub async fn get_valid_token() -> Result<String, String> {
 
     if tokens.expires_at > now + 60 {
         // Token is still valid (with 60s buffer)
+        log::debug!("Access token is still valid");
         Ok(tokens.access_token)
     } else {
         // Token expired, refresh it
+        log::info!("Access token expired, refreshing");
         let new_tokens = refresh_tokens(&tokens.refresh_token).await?;
         Ok(new_tokens.access_token)
     }
@@ -105,9 +153,14 @@ pub async fn get_valid_token() -> Result<String, String> {
 
 #[tauri::command]
 pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
+    log::debug!("Received token submission from webview");
+
     if let Ok(guard) = TOKEN_CHANNEL.lock() {
         if let Some(tx) = guard.as_ref() {
-            tx.send(tokens_json).map_err(|e| e.to_string())?;
+            tx.send(tokens_json).map_err(|e| {
+                log::error!("Failed to send tokens through channel: {}", e);
+                e.to_string()
+            })?;
         }
     }
     Ok(())
@@ -115,6 +168,8 @@ pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, String> {
+    log::info!("Starting authentication flow");
+
     // Create a synchronous channel for communication between the webview event handler and this function
     let (tx, rx) = mpsc::channel();
 
@@ -127,6 +182,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
         *guard = Some(token_tx);
     }
 
+    log::debug!("Creating authentication webview window");
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         "auth",
@@ -142,23 +198,35 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
             // Check if the URL indicates successful login
             // After OAuth login, Keycloak redirects with 'code' query parameter
             if url.contains("code=") && (url.contains("/home") || url.contains("/activities")) {
+                log::info!("OAuth login detected, callback URL received");
                 // Send the URL through the channel (synchronous send)
                 let _ = tx.send(url);
             }
         }
     })
     .build()
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        log::error!("Failed to create authentication webview: {}", e);
+        e.to_string()
+    })?;
 
     // Spawn a blocking task to wait for the login with timeout
+    log::debug!("Waiting for user to complete login (300s timeout)");
     let _url = tokio::task::spawn_blocking(move || {
         rx.recv_timeout(Duration::from_secs(300))
-            .map_err(|_| "Login timeout: no response within 300 seconds".to_string())
+            .map_err(|_| {
+                log::error!("Login timeout: no response within 300 seconds");
+                "Login timeout: no response within 300 seconds".to_string()
+            })
     })
     .await
-    .map_err(|e| format!("Task error: {}", e))??;
+    .map_err(|e| {
+        log::error!("Task error during login wait: {}", e);
+        format!("Task error: {}", e)
+    })??;
 
     // Wait for the OIDC client library to complete the token exchange
+    log::debug!("Waiting for OIDC token exchange to complete");
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     // JavaScript to inject for extracting tokens from localStorage
@@ -175,16 +243,27 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
         })();
     "#;
 
+    log::debug!("Injecting JavaScript to extract tokens from localStorage");
     webview.eval(js_code)
-        .map_err(|e| format!("Failed to inject JavaScript: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to inject JavaScript: {}", e);
+            format!("Failed to inject JavaScript: {}", e)
+        })?;
 
     // Wait for the tokens with timeout
+    log::debug!("Waiting for tokens from webview (5s timeout)");
     let tokens_str: String = tokio::task::spawn_blocking(move || {
         token_rx.recv_timeout(Duration::from_secs(5))
-            .map_err(|_| "Timeout waiting for tokens".to_string())
+            .map_err(|_| {
+                log::error!("Timeout waiting for tokens from webview");
+                "Timeout waiting for tokens".to_string()
+            })
     })
     .await
-    .map_err(|e| format!("Task error: {}", e))??;
+    .map_err(|e| {
+        log::error!("Task error during token extraction: {}", e);
+        format!("Task error: {}", e)
+    })??;
 
     // Clear the global state
     {
@@ -193,31 +272,42 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     }
 
     // Close the webview window
+    log::debug!("Closing authentication webview");
     let _ = webview.close();
 
     // Check if tokens were found
     if tokens_str == "null" {
+        log::error!("Tokens not found in localStorage");
         return Err("Tokens not found in localStorage".to_string());
     }
 
     // Parse the JSON string into AuthTokens
+    log::debug!("Parsing extracted tokens");
     let tokens: AuthTokens = serde_json::from_str(&tokens_str)
-        .map_err(|e| format!("Failed to parse tokens: {}", e))?;
+        .map_err(|e| {
+            log::error!("Failed to parse tokens from JSON: {}", e);
+            format!("Failed to parse tokens: {}", e)
+        })?;
 
     // Store tokens securely in the OS keyring
     store_tokens(&tokens)?;
 
+    log::info!("Authentication completed successfully");
     Ok(tokens)
 }
 
 #[tauri::command]
 pub async fn logout() -> Result<(), String> {
+    log::info!("User logout requested");
     delete_tokens()?;
+    log::info!("User logged out successfully");
     Ok(())
 }
 
 #[tauri::command]
 pub async fn is_authenticated() -> Result<bool, String> {
+    log::debug!("Checking authentication status");
+
     match load_tokens() {
         Ok(tokens) => {
             // Check if token is expired
@@ -226,8 +316,13 @@ pub async fn is_authenticated() -> Result<bool, String> {
                 .unwrap()
                 .as_secs() as i64;
 
-            Ok(tokens.expires_at > now)
+            let is_valid = tokens.expires_at > now;
+            log::debug!("Authentication status: {}", if is_valid { "valid" } else { "expired" });
+            Ok(is_valid)
         }
-        Err(_) => Ok(false)
+        Err(_) => {
+            log::debug!("Authentication status: not authenticated");
+            Ok(false)
+        }
     }
 }

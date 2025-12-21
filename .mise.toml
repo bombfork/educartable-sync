@@ -1,2 +1,23 @@
 [tools]
 rust = "stable"
+
+[tasks.dev]
+description = "Run Tauri dev with configurable log level"
+usage = '''
+flag "--log-level <level>" help="Set the Rust log level" {
+  choices "trace" "debug" "info" "warn" "error"
+  default "info"
+}
+'''
+run = """
+echo "Starting Tauri dev with RUST_LOG=${usage_log_level:-info}"
+RUST_LOG=${usage_log_level:-info} cargo tauri dev
+"""
+
+[tasks.build]
+description = "Build the application"
+run = "cargo tauri build"
+
+[tasks.check]
+description = "Check Rust code without building"
+run = "cargo check --manifest-path src-tauri/Cargo.toml"

@@ -14,25 +14,31 @@ use crate::models::{Activity, Media, SyncProgress, SyncStats};
 pub async fn download_file(
     url: &str,
     destination: &Path
-) -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new();
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    log::debug!("Downloading file to {:?}", destination);
 
+    let client = Client::new();
     let response = client.get(url).send().await?;
 
-    if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()).into());
+    let status = response.status();
+    if !status.is_success() {
+        log::error!("Download failed with status: {}", status);
+        return Err(format!("Download failed with status: {}", status).into());
     }
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = destination.parent() {
+        log::debug!("Creating directory: {:?}", parent);
         tokio::fs::create_dir_all(parent).await?;
     }
 
     // Stream response to file
     let mut file = File::create(destination).await?;
     let bytes = response.bytes().await?;
+    let size = bytes.len();
     file.write_all(&bytes).await?;
 
+    log::debug!("Downloaded {} bytes to {:?}", size, destination);
     Ok(())
 }
 
@@ -87,8 +93,9 @@ fn sanitize_filename(title: &str) -> String {
 pub async fn save_article_markdown(
     sync_path: &PathBuf,
     activity: &Activity
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let folder = get_activity_folder(sync_path, activity);
+    log::debug!("Saving article markdown for activity {} to {:?}", activity.id, folder);
 
     // Create directory if it doesn't exist
     tokio::fs::create_dir_all(&folder).await?;
@@ -99,9 +106,10 @@ pub async fn save_article_markdown(
     let markdown_content = format_article_markdown(activity);
 
     // Write to file
-    let mut file = File::create(article_path).await?;
+    let mut file = File::create(&article_path).await?;
     file.write_all(markdown_content.as_bytes()).await?;
 
+    log::debug!("Article saved to {:?}", article_path);
     Ok(())
 }
 
@@ -123,9 +131,10 @@ fn format_article_markdown(activity: &Activity) -> String {
 pub async fn should_download_file(
     path: &Path,
     expected_size: u64,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if file exists
     if !path.exists() {
+        log::debug!("File does not exist, will download: {:?}", path);
         return Ok(true);
     }
 
@@ -135,8 +144,10 @@ pub async fn should_download_file(
 
     // Re-download if size doesn't match (incomplete/corrupted file)
     if actual_size != expected_size {
+        log::warn!("File size mismatch for {:?}: expected {}, found {}. Will re-download.", path, expected_size, actual_size);
         Ok(true)
     } else {
+        log::debug!("File already exists with correct size, skipping: {:?}", path);
         Ok(false) // File is complete, skip download
     }
 }
@@ -146,37 +157,40 @@ pub async fn download_with_retry(
     url: &str,
     destination: &Path,
     max_retries: u32,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut attempt = 0;
+    log::debug!("Starting download with retry for {:?}", destination);
 
     loop {
         attempt += 1;
 
         match download_file(url, destination).await {
-            Ok(_) => return Ok(()),
+            Ok(_) => {
+                log::debug!("Download successful on attempt {} for {:?}", attempt, destination);
+                return Ok(());
+            }
             Err(e) => {
                 if attempt >= max_retries {
+                    log::error!("Download failed after {} attempts for {:?}: {}", attempt, destination, e);
                     return Err(format!("Failed after {} attempts: {}", attempt, e).into());
                 }
 
                 // Check if error is retryable
                 if !is_retryable_error(&e) {
+                    log::error!("Non-retryable error for {:?}: {}", destination, e);
                     return Err(e);
                 }
 
                 // Exponential backoff: 2^attempt seconds
                 let wait_time = 2_u64.pow(attempt);
-                eprintln!(
-                    "Download attempt {} failed, retrying in {}s: {}",
-                    attempt, wait_time, e
-                );
+                log::warn!("Download attempt {} failed for {:?}, retrying in {}s: {}", attempt, destination, wait_time, e);
                 sleep(Duration::from_secs(wait_time)).await;
             }
         }
     }
 }
 
-fn is_retryable_error(error: &Box<dyn std::error::Error>) -> bool {
+fn is_retryable_error(error: &Box<dyn std::error::Error + Send + Sync>) -> bool {
     let error_str = error.to_string().to_lowercase();
 
     // Network errors are retryable
@@ -197,6 +211,7 @@ pub struct SyncEngine {
 
 impl SyncEngine {
     pub fn new(app_handle: AppHandle, api_client: EducartableClient, sync_path: PathBuf) -> Self {
+        log::debug!("Creating SyncEngine with sync_path: {:?}", sync_path);
         Self {
             app_handle,
             api_client,
@@ -221,11 +236,109 @@ impl SyncEngine {
         let _ = self.app_handle.emit("sync-progress", &progress);
     }
 
-    pub async fn sync_all(&self) -> Result<SyncStats, Box<dyn std::error::Error>> {
-        let stats = SyncStats::default();
+    pub async fn sync_all(&self) -> Result<SyncStats, Box<dyn std::error::Error + Send + Sync>> {
+        log::info!("Starting sync operation");
+        let mut stats = SyncStats::default();
 
-        // TODO: Implement full sync logic using all the functions above
+        // Emit starting progress
+        self.emit_progress(0, 0, "Starting sync...".to_string());
 
+        // Get parent ID
+        log::info!("Fetching parent ID");
+        let parent_id = self.api_client.get_parent_id().await
+            .map_err(|e| {
+                log::error!("Failed to get user info: {}", e);
+                format!("Failed to get user info: {}", e)
+            })?;
+
+        // Fetch all activities
+        self.emit_progress(0, 0, "Fetching activities...".to_string());
+        log::info!("Fetching all activities");
+        let activities = self.api_client.fetch_all_activities(parent_id).await
+            .map_err(|e| {
+                log::error!("Failed to fetch activities: {}", e);
+                format!("Failed to fetch activities: {}", e)
+            })?;
+
+        stats.total_activities = activities.len() as u32;
+        log::info!("Found {} activities to process", stats.total_activities);
+
+        // Count total media files
+        let total_media: u32 = activities.iter()
+            .map(|a| a.medias.len() as u32)
+            .sum();
+        stats.total_media = total_media;
+        log::info!("Found {} total media files to sync", total_media);
+
+        let mut processed_media = 0u32;
+
+        // Process each activity
+        for activity in &activities {
+            log::debug!("Processing activity {}: {}", activity.id, activity.title);
+
+            // Save article as markdown
+            if let Err(e) = save_article_markdown(&self.sync_path, activity).await {
+                log::error!("Failed to save article {}: {}", activity.id, e);
+            }
+
+            // Process each media file
+            for media in &activity.medias {
+                processed_media += 1;
+
+                // Skip videos if not configured to include them
+                // Note: config.include_videos check would need to be passed to sync_all
+                // For now, we'll download everything
+
+                // Prepare filename for progress display
+                let filename = format!("{}{}", media.name, media.extension);
+                log::debug!("Processing media {}/{}: {}", processed_media, total_media, filename);
+                self.emit_progress(processed_media, total_media, filename.clone());
+
+                // Get destination path
+                let destination = get_media_path(&self.sync_path, activity, media);
+
+                // Check if file needs downloading
+                match should_download_file(&destination, media.size).await {
+                    Ok(true) => {
+                        // File needs downloading
+                        log::info!("Downloading: {}", filename);
+                        match self.api_client.get_signed_media_url(&media.id, &filename).await {
+                            Ok(signed_url) => {
+                                // Download with retry
+                                match download_with_retry(&signed_url, &destination, 3).await {
+                                    Ok(_) => {
+                                        log::info!("Successfully downloaded: {}", filename);
+                                        stats.downloaded += 1;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to download {}: {}", filename, e);
+                                        stats.failed += 1;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to get signed URL for {}: {}", filename, e);
+                                stats.failed += 1;
+                            }
+                        }
+                    }
+                    Ok(false) => {
+                        // File already exists and is complete
+                        log::debug!("Skipping existing file: {}", filename);
+                        stats.skipped += 1;
+                    }
+                    Err(e) => {
+                        log::error!("Failed to check file status for {}: {}", filename, e);
+                        stats.failed += 1;
+                    }
+                }
+            }
+        }
+
+        // Emit completion
+        self.emit_progress(total_media, total_media, "Sync complete!".to_string());
+
+        log::info!("Sync completed. Downloaded: {}, Skipped: {}, Failed: {}", stats.downloaded, stats.skipped, stats.failed);
         Ok(stats)
     }
 }
@@ -253,14 +366,23 @@ pub async fn start_sync(
     app_handle: AppHandle,
     config: crate::models::AppConfig,
 ) -> Result<SyncStats, String> {
+    log::info!("Sync command invoked");
+
     // Load authentication tokens
+    log::debug!("Loading authentication tokens");
     let tokens = crate::auth::load_tokens()
-        .map_err(|e| format!("Not authenticated: {}", e))?;
+        .map_err(|e| {
+            log::error!("Not authenticated: {}", e);
+            format!("Not authenticated: {}", e)
+        })?;
 
     // Validate sync path
     if config.sync_path.as_os_str().is_empty() {
+        log::error!("Sync directory not configured");
         return Err("Sync directory not configured".to_string());
     }
+
+    log::info!("Sync directory: {:?}", config.sync_path);
 
     // Create API client
     let api_client = EducartableClient::new(tokens.access_token);
@@ -269,6 +391,17 @@ pub async fn start_sync(
     let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
 
     // Run synchronization
-    sync_engine.sync_all().await
-        .map_err(|e| format!("Sync failed: {}", e))
+    log::info!("Starting synchronization");
+    let result = sync_engine.sync_all().await
+        .map_err(|e| {
+            log::error!("Sync failed: {}", e);
+            format!("Sync failed: {}", e)
+        });
+
+    match &result {
+        Ok(stats) => log::info!("Sync completed successfully: {:?}", stats),
+        Err(e) => log::error!("Sync failed: {}", e),
+    }
+
+    result
 }
