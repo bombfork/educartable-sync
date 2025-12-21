@@ -3,7 +3,7 @@
 use tauri::{AppHandle, WebviewWindowBuilder, WebviewUrl, Wry};
 use tauri::webview::PageLoadEvent;
 use std::sync::{Mutex, mpsc};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::models::AuthTokens;
 use keyring::Entry;
 
@@ -158,4 +158,26 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     store_tokens(&tokens)?;
 
     Ok(tokens)
+}
+
+#[tauri::command]
+pub async fn logout() -> Result<(), String> {
+    delete_tokens()?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn is_authenticated() -> Result<bool, String> {
+    match load_tokens() {
+        Ok(tokens) => {
+            // Check if token is expired
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+
+            Ok(tokens.expires_at > now)
+        }
+        Err(_) => Ok(false)
+    }
 }
