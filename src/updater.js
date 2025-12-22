@@ -4,10 +4,6 @@
  * Handles automatic update checking and installation with French UI
  */
 
-// Import Tauri API
-const { invoke } = window.__TAURI__.core;
-const { relaunch } = window.__TAURI__.process;
-
 // Import notification system
 import { showError, showSuccess, showLoading, showInfo, handleError } from './notifications.js';
 
@@ -18,6 +14,7 @@ import { showError, showSuccess, showLoading, showInfo, handleError } from './no
 export async function checkForUpdatesSilently() {
     try {
         console.log('Checking for updates silently...');
+        const { invoke } = window.__TAURI__.core;
         const updateInfo = await invoke('check_for_updates');
 
         if (updateInfo.available) {
@@ -49,6 +46,7 @@ export async function checkForUpdatesManually() {
 
     try {
         console.log('Checking for updates manually...');
+        const { invoke } = window.__TAURI__.core;
         const updateInfo = await invoke('check_for_updates');
 
         // Dismiss loading notification
@@ -141,6 +139,7 @@ async function downloadAndInstallUpdate() {
 
     try {
         console.log('Downloading and installing update...');
+        const { invoke } = window.__TAURI__.core;
         await invoke('download_and_install_update');
 
         // Dismiss loading notification
@@ -191,6 +190,7 @@ function showRestartPromptNotification() {
     restartBtn.addEventListener('click', async () => {
         console.log('Restarting application to apply update...');
         try {
+            const { relaunch } = window.__TAURI__.process;
             await relaunch();
         } catch (error) {
             console.error('Failed to restart:', error);

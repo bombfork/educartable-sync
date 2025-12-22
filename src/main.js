@@ -233,7 +233,7 @@ function displayConfig() {
         syncPathInput.placeholder = '';
     } else {
         syncPathInput.value = '';
-        syncPathInput.placeholder = 'Aucun dossier sélectionné';
+        syncPathInput.placeholder = 'Sélectionnez un dossier de destination';
     }
 }
 
