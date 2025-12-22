@@ -43,22 +43,10 @@ jobs:
           cache-on-failure: true
           shared-key: ${{ matrix.platform }}
 
-      - name: Cache Tauri CLI
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/bin/cargo-tauri
-          key: ${{ runner.os }}-tauri-cli-2.0.0
-          restore-keys: |
-            ${{ runner.os }}-tauri-cli-
-
       - name: Install Tauri CLI
-        shell: bash
-        run: |
-          if ! command -v cargo-tauri &> /dev/null; then
-            cargo install tauri-cli --version "^2.0.0" --locked
-          else
-            echo "Tauri CLI already installed"
-          fi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
 
       - name: Build Tauri app
         run: cargo tauri build
