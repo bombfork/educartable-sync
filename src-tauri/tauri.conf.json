@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "educartable-sync",
-  "version": "0.1.0",
-  "identifier": "com.atom.educartable-sync",
+  "version": "0.2.0",
+  "identifier": "net.bombfork.educartable-sync",
   "build": {
     "frontendDist": "../src"
   },
@@ -23,7 +23,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg", "appimage"],
+    "targets": [
+      "nsis",
+      "dmg",
+      "appimage"
+    ],
     "shortDescription": "Synchronisation de photos depuis Educartable",
     "longDescription": "Application de bureau pour télécharger et synchroniser par lot les photos depuis Educartable vers votre ordinateur.",
     "icon": [
