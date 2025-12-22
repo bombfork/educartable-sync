@@ -270,6 +270,21 @@ section button + button {
     }
 }
 
+/* Update notification specific styles */
+.update-notification {
+    min-width: 350px;
+}
+
+.update-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.update-actions button {
+    flex: 1;
+}
+
 /* Responsive adjustments for mobile */
 @media (max-width: 768px) {
     .notification-container {
@@ -288,5 +303,13 @@ section button + button {
 
     .notification-hide {
         transform: translateY(-100%);
+    }
+
+    .update-notification {
+        min-width: unset;
+    }
+
+    .update-actions {
+        flex-direction: column;
     }
 }

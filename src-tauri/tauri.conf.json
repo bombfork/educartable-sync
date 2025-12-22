@@ -47,5 +47,16 @@
       "entitlements": null,
       "signingIdentity": null
     }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/bombfork/educartable-sync/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3MTBBNTI0MDFGMDI0QTMKUldTakpQQUJKS1VRcDNLZWZvQjBqQzNPOUFMNzREU1VmKytBdFFwMUkxY3pOMUNVMjhYWGxUdHkK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

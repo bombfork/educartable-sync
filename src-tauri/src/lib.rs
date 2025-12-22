@@ -3,6 +3,7 @@ mod api;
 mod sync;
 mod config;
 mod models;
+mod updater;
 
 use tauri::Manager;
 
@@ -60,6 +61,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             auth::authenticate,
@@ -70,7 +72,9 @@ pub fn run() {
             config::save_config,
             config::select_sync_directory,
             sync::start_sync,
-            open_logs_directory
+            open_logs_directory,
+            updater::check_for_updates,
+            updater::download_and_install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -12,6 +12,9 @@ const { listen } = window.__TAURI__.event;
 // Import notification system
 import { showError, showSuccess, showLoading, showInfo, handleError, parseError } from './notifications.js';
 
+// Import updater module
+import { checkForUpdatesSilently, checkForUpdatesManually } from './updater.js';
+
 // Application state
 let isAuthenticated = false;
 let config = null;
@@ -34,6 +37,9 @@ async function init() {
     // Set up event listeners
     setupEventListeners();
 
+    // Check for updates silently (non-blocking)
+    checkForUpdatesSilently();
+
     console.log('Initialization complete');
 }
 
@@ -49,6 +55,7 @@ function setupEventListeners() {
     document.getElementById('browse-btn').addEventListener('click', handleBrowse);
     document.getElementById('sync-path').addEventListener('click', handleBrowse);
     document.getElementById('open-logs-btn').addEventListener('click', handleOpenLogs);
+    document.getElementById('check-updates-btn').addEventListener('click', checkForUpdatesManually);
 
     // Sync button
     document.getElementById('sync-btn').addEventListener('click', handleSync);
