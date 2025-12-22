@@ -16,7 +16,7 @@ RUST_LOG=${usage_log_level:-info} cargo tauri dev
 
 [tasks.build]
 description = "Build the application"
-run = "cargo tauri build"
+run = "NO_STRIP=1 cargo tauri build"
 
 [tasks.check]
 description = "Check Rust code without building"
