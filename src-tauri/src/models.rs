@@ -28,7 +28,6 @@ pub struct UserInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct UserInfoResponse {
-    pub success: bool,
     pub data: UserInfo,
 }
 

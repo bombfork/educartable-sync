@@ -358,23 +358,6 @@ impl SyncEngine {
     }
 }
 
-// Issue #29: Video file detection
-pub fn is_video(media: &Media) -> bool {
-    // Check by MIME type (most reliable)
-    if media.media_type.starts_with("video/") {
-        return true;
-    }
-
-    // Check by extension (fallback)
-    let ext = media.extension.to_lowercase();
-    matches!(
-        ext.as_str(),
-        ".mov" | ".mp4" | ".avi" | ".mkv" | ".webm" |
-        ".wmv" | ".flv" | ".m4v" | ".mpg" | ".mpeg" |
-        ".3gp" | ".ogv"
-    )
-}
-
 // Issue #34: Tauri command for starting sync
 #[tauri::command]
 pub async fn start_sync(

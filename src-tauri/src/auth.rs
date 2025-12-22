@@ -6,7 +6,6 @@ use std::sync::{Mutex, mpsc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::models::AuthTokens;
 use keyring::Entry;
-use reqwest::Client;
 
 // Global state to store tokens during extraction
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
@@ -85,70 +84,6 @@ pub fn delete_tokens() -> Result<(), String> {
 
     log::info!("Authentication tokens deleted successfully");
     Ok(())
-}
-
-/// Refresh expired access tokens using the refresh_token
-pub async fn refresh_tokens(refresh_token: &str) -> Result<AuthTokens, String> {
-    log::info!("Attempting to refresh authentication tokens");
-
-    let client = Client::new();
-
-    let params = [
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_id", "educlasse"),
-    ];
-
-    log::debug!("Sending token refresh request to Keycloak");
-    let response = client
-        .post("https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token")
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| {
-            log::error!("Token refresh request failed: {}", e);
-            "Cannot connect to authentication server. Check your internet connection.".to_string()
-        })?;
-
-    if !response.status().is_success() {
-        log::error!("Token refresh failed with status: {}", response.status());
-        return Err("Your session has expired. Please log in again.".to_string());
-    }
-
-    let tokens: AuthTokens = response.json().await
-        .map_err(|e| {
-            log::error!("Failed to parse refreshed tokens: {}", e);
-            "Authentication server error. Please try logging in again.".to_string()
-        })?;
-
-    // Store new tokens
-    store_tokens(&tokens)?;
-
-    log::info!("Authentication tokens refreshed successfully");
-    Ok(tokens)
-}
-
-/// Get a valid access token, refreshing if necessary
-pub async fn get_valid_token() -> Result<String, String> {
-    log::debug!("Getting valid access token");
-
-    let tokens = load_tokens()?;
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-
-    if tokens.expires_at > now + 60 {
-        // Token is still valid (with 60s buffer)
-        log::debug!("Access token is still valid");
-        Ok(tokens.access_token)
-    } else {
-        // Token expired, refresh it
-        log::info!("Access token expired, refreshing");
-        let new_tokens = refresh_tokens(&tokens.refresh_token).await?;
-        Ok(new_tokens.access_token)
-    }
 }
 
 #[tauri::command]

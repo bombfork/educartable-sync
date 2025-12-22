@@ -1,34 +1,7 @@
 // API client for Educartable endpoints
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::fmt;
-use tokio::time::sleep;
-use std::time::Duration;
+use serde::Deserialize;
 use crate::models::{UserInfo, UserInfoResponse, ActivitiesResponse, Activity};
-
-// Issue #23: Custom error types
-#[derive(Debug)]
-pub enum ApiError {
-    Authentication(String),
-    Network(String),
-    RateLimit,
-    ServerError(String),
-    ParseError(String),
-}
-
-impl fmt::Display for ApiError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ApiError::Authentication(msg) => write!(f, "Authentication error: {}", msg),
-            ApiError::Network(msg) => write!(f, "Network error: {}", msg),
-            ApiError::RateLimit => write!(f, "Rate limit exceeded"),
-            ApiError::ServerError(msg) => write!(f, "Server error: {}", msg),
-            ApiError::ParseError(msg) => write!(f, "Parse error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ApiError {}
 
 pub struct EducartableClient {
     client: Client,
@@ -41,98 +14,6 @@ impl EducartableClient {
         Self {
             client: Client::new(),
             access_token,
-        }
-    }
-
-    // Issue #23: Constructor with timeout
-    pub fn new_with_timeout(access_token: String, timeout_secs: u64) -> Self {
-        log::debug!("Creating new EducartableClient with {}s timeout", timeout_secs);
-        let client = Client::builder()
-            .timeout(Duration::from_secs(timeout_secs))
-            .build()
-            .unwrap();
-
-        Self {
-            client,
-            access_token,
-        }
-    }
-
-    // Issue #23: Retry logic with exponential backoff
-    async fn get_with_retry<T: for<'de> Deserialize<'de>>(
-        &self,
-        url: &str,
-        max_retries: u32
-    ) -> Result<T, ApiError> {
-        let mut attempt = 0;
-        log::debug!("GET request with retry: {}", url);
-
-        loop {
-            attempt += 1;
-            log::debug!("Attempt {}/{} for {}", attempt, max_retries, url);
-
-            match self.client
-                .get(url)
-                .header("Authorization", &self.access_token)
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    let status = response.status();
-                    match status.as_u16() {
-                        200..=299 => {
-                            log::debug!("Request successful: {} (status: {})", url, status);
-                            return response.json().await
-                                .map_err(|e| {
-                                    log::error!("Failed to parse response JSON: {}", e);
-                                    ApiError::ParseError(e.to_string())
-                                });
-                        }
-                        401 | 403 => {
-                            log::error!("Authentication failed for {}: {}", url, status);
-                            return Err(ApiError::Authentication("Invalid token".to_string()));
-                        }
-                        429 => {
-                            if attempt >= max_retries {
-                                log::error!("Rate limit exceeded for {} after {} attempts", url, attempt);
-                                return Err(ApiError::RateLimit);
-                            }
-                            let wait_time = 2_u64.pow(attempt);
-                            log::warn!("Rate limited on {}, retrying in {}s", url, wait_time);
-                            sleep(Duration::from_secs(wait_time)).await;
-                            continue;
-                        }
-                        500..=599 => {
-                            if attempt >= max_retries {
-                                log::error!("Server error for {} after {} attempts: {}", url, attempt, status);
-                                return Err(ApiError::ServerError(
-                                    format!("Server error: {}", status)
-                                ));
-                            }
-                            let wait_time = 2_u64.pow(attempt);
-                            log::warn!("Server error {} on {}, retrying in {}s", status, url, wait_time);
-                            sleep(Duration::from_secs(wait_time)).await;
-                            continue;
-                        }
-                        _ => {
-                            log::error!("Unexpected status {} for {}", status, url);
-                            return Err(ApiError::ServerError(
-                                format!("Unexpected status: {}", status)
-                            ));
-                        }
-                    }
-                }
-                Err(e) => {
-                    if attempt >= max_retries {
-                        log::error!("Network error for {} after {} attempts: {}", url, attempt, e);
-                        return Err(ApiError::Network(e.to_string()));
-                    }
-                    let wait_time = 2_u64.pow(attempt);
-                    log::warn!("Network error on {}, retrying in {}s: {}", url, wait_time, e);
-                    sleep(Duration::from_secs(wait_time)).await;
-                    continue;
-                }
-            }
         }
     }
 
@@ -159,32 +40,6 @@ impl EducartableClient {
             let error_body = response.text().await?;
             log::error!("Request failed with status {}: {}", status, error_body);
             return Err(format!("Request failed with status {}: {}", status, error_body).into());
-        }
-
-        let data: T = response.json().await?;
-        log::debug!("Response parsed successfully");
-        Ok(data)
-    }
-
-    async fn post<T: for<'de> Deserialize<'de>, B: Serialize>(
-        &self,
-        url: &str,
-        body: &B
-    ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
-        log::debug!("POST request: {}", url);
-
-        let response = self.client
-            .post(url)
-            .header("Authorization", &self.access_token)
-            .json(body)
-            .send()
-            .await?;
-
-        let status = response.status();
-        log::debug!("Response status: {}", status);
-
-        if !status.is_success() {
-            log::warn!("Non-success status {} for {}", status, url);
         }
 
         let data: T = response.json().await?;
