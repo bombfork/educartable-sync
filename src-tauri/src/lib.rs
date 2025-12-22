@@ -4,22 +4,60 @@ mod sync;
 mod config;
 mod models;
 
+use tauri::Manager;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Open the logs directory in the system file explorer
+#[tauri::command]
+async fn open_logs_directory(app: tauri::AppHandle) -> Result<(), String> {
+    let log_dir = app.path().app_log_dir()
+        .map_err(|e| format!("Failed to get logs directory: {}", e))?;
+
+    log::info!("Opening logs directory: {:?}", log_dir);
+
+    // Ensure the directory exists
+    if !log_dir.exists() {
+        std::fs::create_dir_all(&log_dir)
+            .map_err(|e| format!("Failed to create logs directory: {}", e))?;
+    }
+
+    // Open the directory in the system file explorer
+    tauri_plugin_opener::open_path(log_dir.to_str().unwrap(), None::<&str>)
+        .map_err(|e| format!("Failed to open logs directory: {}", e))?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Initialize logging
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
-        .init();
-
-    log::info!("Starting Educartable Sync application");
-
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                ])
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .max_file_size(50_000 /* 50 KB */)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepAll)
+                .build(),
+        )
+        .setup(|app| {
+            log::info!("Starting Educartable Sync application");
+            log::info!("Version: {}", app.package_info().version);
+            log::info!("App identifier: {}", app.config().identifier);
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -31,7 +69,8 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::select_sync_directory,
-            sync::start_sync
+            sync::start_sync,
+            open_logs_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

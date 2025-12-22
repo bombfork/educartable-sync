@@ -48,6 +48,7 @@ function setupEventListeners() {
     // Configuration buttons and inputs
     document.getElementById('browse-btn').addEventListener('click', handleBrowse);
     document.getElementById('sync-path').addEventListener('click', handleBrowse);
+    document.getElementById('open-logs-btn').addEventListener('click', handleOpenLogs);
 
     // Sync button
     document.getElementById('sync-btn').addEventListener('click', handleSync);
@@ -285,6 +286,39 @@ async function handleBrowse() {
         // Reset button state
         browseBtn.disabled = false;
         browseBtn.removeAttribute('aria-busy');
+    }
+}
+
+/**
+ * Handle open logs button click
+ * Opens the logs directory in the system file explorer
+ */
+async function handleOpenLogs() {
+    console.log('Opening logs directory...');
+
+    const openLogsBtn = document.getElementById('open-logs-btn');
+
+    // Set button to loading state
+    openLogsBtn.disabled = true;
+    openLogsBtn.setAttribute('aria-busy', 'true');
+    const originalText = openLogsBtn.textContent;
+    openLogsBtn.textContent = 'Ouverture...';
+
+    try {
+        // Call the Tauri open_logs_directory command
+        await invoke('open_logs_directory');
+        console.log('Logs directory opened successfully');
+
+        // Show success notification
+        showSuccess('Dossier des logs ouvert avec succès');
+    } catch (error) {
+        console.error('Failed to open logs directory:', error);
+        handleError(error, 'open logs directory');
+    } finally {
+        // Reset button state
+        openLogsBtn.disabled = false;
+        openLogsBtn.removeAttribute('aria-busy');
+        openLogsBtn.textContent = originalText;
     }
 }
 
