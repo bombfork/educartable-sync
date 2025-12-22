@@ -46,6 +46,11 @@
       "frameworks": [],
       "entitlements": null,
       "signingIdentity": null
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
     }
   },
   "plugins": {
