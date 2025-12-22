@@ -1,75 +1,81 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Educartable Sync</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Educartable Sync</title>
 
-    <!-- Pico CSS v2 -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- Pico CSS v2 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
 
-    <!-- Custom styles -->
-    <link rel="stylesheet" href="styles.css">
+  <!-- Custom styles -->
+  <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
-    <main class="container">
-        <article>
-            <header>
-                <h1>📚 Educartable Sync</h1>
-                <p>Téléchargez et synchronisez les photos des activités scolaires de votre enfant</p>
-            </header>
+  <main class="container">
+    <article>
+      <header>
+        <h1>📚 Educartable Sync</h1>
+        <p>Téléchargez et synchronisez les photos des activités scolaires de votre enfant</p>
+      </header>
 
-            <!-- Configuration Section -->
-            <section id="config-section">
-                <h2>⚙️ Configuration</h2>
+      <!-- Configuration Section -->
+      <section id="config-section">
+        <h2>⚙️ Configuration</h2>
 
-                <div class="two-column-layout">
-                    <!-- Left column: Authentication and Updates -->
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-                            <span>Statut : <strong id="auth-status" class="status-disconnected">Non connecté</strong></span>
-                            <button id="login-btn">Se connecter</button>
-                            <button id="logout-btn" class="secondary hidden" style="margin: 0; padding: 0.25rem 0.75rem;">Déconnexion</button>
-                        </div>
+        <div class="two-column-layout">
+          <!-- Left column: Authentication and Updates -->
+          <div>
+            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+              <span>Statut : <strong id="auth-status" class="status-disconnected">Non connecté</strong></span>
+              <button id="login-btn" style="margin: 0; padding: 0.25rem 0.50rem;">Se connecter</button>
+              <button id="logout-btn" class="secondary hidden"
+                style="margin: 0; padding: 0.25rem 0.75rem;">Déconnexion</button>
+            </div>
 
-                        <button id="check-updates-btn" class="secondary" style="margin: 0; width: 100%;">
-                            🔄 Vérifier les mises à jour
-                        </button>
-                    </div>
+            <button id="check-updates-btn" class="secondary" style="margin: 0; width: 100%; padding: 0.25rem 0.75rem;">
+              🔄 Vérifier les mises à jour
+            </button>
+          </div>
 
-                    <!-- Right column: Sync path and Logs -->
-                    <div>
-                        <div style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 1rem;">
-                            <input type="text" id="sync-path" readonly placeholder="Sélectionnez un dossier de destination" style="cursor: pointer; margin: 0;">
-                            <button id="browse-btn" class="secondary" style="margin: 0;">Parcourir</button>
-                        </div>
+          <!-- Right column: Sync path and Logs -->
+          <div>
+            <div
+              style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 1rem;">
+              <input type="text" id="sync-path" readonly placeholder="Sélectionnez un dossier de destination"
+                style="cursor: pointer; margin: 0; padding: 0.65rem 0.75rem;">
+              <button id="browse-btn" class="secondary" style="margin: 0; padding: 0.25rem 0.75rem;">Parcourir</button>
+            </div>
 
-                        <button id="open-logs-btn" class="secondary" style="margin: 0; width: 100%;">
-                            📋 Ouvrir le dossier des logs
-                        </button>
-                    </div>
-                </div>
-            </section>
+            <button id="open-logs-btn" class="secondary" style="margin: 0; width: 100%; padding: 0.25rem 0.75rem;">
+              📋 Ouvrir le dossier des logs
+            </button>
+          </div>
+        </div>
+      </section>
 
-            <!-- Sync Section -->
-            <section id="sync-section">
-                <h2>📥 Synchronisation</h2>
+      <!-- Sync Section -->
+      <section id="sync-section">
+        <h2>📥 Synchronisation</h2>
 
-                <button id="sync-btn" disabled>
-                    Synchroniser maintenant
-                </button>
+        <button id="sync-btn" disabled>
+          Synchroniser maintenant
+        </button>
 
-                <div id="sync-progress-container">
-                    <div class="custom-progress-bar">
-                        <div id="sync-progress-fill" class="progress-fill"></div>
-                        <div id="progress-text" class="progress-text">0 / 0 fichiers</div>
-                    </div>
-                    <small id="current-file"></small>
-                </div>
-            </section>
-        </article>
-    </main>
+        <div id="sync-progress-container">
+          <div class="custom-progress-bar">
+            <div id="sync-progress-fill" class="progress-fill"></div>
+            <div id="progress-text" class="progress-text">0 / 0 fichiers</div>
+          </div>
+          <small id="current-file"></small>
+        </div>
+      </section>
+    </article>
+  </main>
 
-    <script src="main.js" type="module"></script>
+  <script src="main.js" type="module"></script>
 </body>
+
 </html>
