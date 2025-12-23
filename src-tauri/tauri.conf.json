@@ -23,11 +23,11 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": [
       "nsis",
       "dmg",
-      "appimage",
-      "updater"
+      "appimage"
     ],
     "shortDescription": "Synchronisation de photos depuis Educartable",
     "longDescription": "Application de bureau pour télécharger et synchroniser par lot les photos depuis Educartable vers votre ordinateur.",
