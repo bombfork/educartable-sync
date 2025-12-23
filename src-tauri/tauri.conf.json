@@ -26,7 +26,8 @@
     "targets": [
       "nsis",
       "dmg",
-      "appimage"
+      "appimage",
+      "updater"
     ],
     "shortDescription": "Synchronisation de photos depuis Educartable",
     "longDescription": "Application de bureau pour télécharger et synchroniser par lot les photos depuis Educartable vers votre ordinateur.",
