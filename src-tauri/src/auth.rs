@@ -12,77 +12,172 @@ static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 
 // Constants for keyring service identification
 const SERVICE_NAME: &str = "educartable-downloader";
-const USERNAME: &str = "auth_tokens";
+const USERNAME_PREFIX: &str = "auth";
 
-/// Store authentication tokens securely in the OS keyring
-pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
-    log::debug!("Attempting to store authentication tokens in keyring");
+// Windows Credential Manager limit per entry
+const MAX_CREDENTIAL_LENGTH: usize = 2560;
 
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| {
-            log::error!("Keyring entry creation failed: {}", e);
-            "Cannot access system keyring. Please check your system permissions.".to_string()
-        })?;
+// Token field names for separate keyring entries
+const TOKEN_FIELDS: [&str; 5] = [
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "expires_at",
+    "session_state",
+];
 
-    let tokens_json = serde_json::to_string(tokens)
-        .map_err(|e| {
-            log::error!("Token serialization failed: {}", e);
-            "Failed to save login information. Please try again.".to_string()
-        })?;
-
-    entry.set_password(&tokens_json)
-        .map_err(|e| {
-            log::error!("Failed to store tokens in keyring: {}", e);
-            "Cannot save login credentials. Please check your system permissions.".to_string()
-        })?;
-
-    log::info!("Authentication tokens stored successfully");
+/// Validate that a token field doesn't exceed Windows Credential Manager limit
+fn validate_token_length(field_name: &str, value: &str) -> Result<(), String> {
+    let length = value.len();
+    if length > MAX_CREDENTIAL_LENGTH {
+        log::error!(
+            "Token field '{}' exceeds Windows Credential Manager limit: {} chars (limit: {} chars)",
+            field_name,
+            length,
+            MAX_CREDENTIAL_LENGTH
+        );
+        return Err(format!(
+            "Token field '{}' is too long ({} chars). Maximum allowed: {} chars. \
+             This is a platform limitation. Please contact support.",
+            field_name, length, MAX_CREDENTIAL_LENGTH
+        ));
+    }
+    log::debug!("Token field '{}' length validated: {} chars (within {} limit)",
+                field_name, length, MAX_CREDENTIAL_LENGTH);
     Ok(())
 }
 
-/// Load authentication tokens from the OS keyring
+/// Store authentication tokens securely in the OS keyring (split into separate entries)
+pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
+    log::debug!("Attempting to store authentication tokens in keyring (split storage mode)");
+
+    // Prepare token fields as string values
+    let token_values = [
+        ("access_token", tokens.access_token.as_str()),
+        ("refresh_token", tokens.refresh_token.as_str()),
+        ("id_token", tokens.id_token.as_str()),
+        ("expires_at", &tokens.expires_at.to_string()),
+        ("session_state", tokens.session_state.as_str()),
+    ];
+
+    // First, validate all token lengths before storing anything
+    for (field_name, value) in &token_values {
+        validate_token_length(field_name, value)?;
+    }
+
+    // All validations passed, now store each token in a separate keyring entry
+    for (field_name, value) in &token_values {
+        let username = format!("{}.{}", USERNAME_PREFIX, field_name);
+        let entry = Entry::new(SERVICE_NAME, &username)
+            .map_err(|e| {
+                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+                format!("Cannot access system keyring for '{}'. Please check your system permissions.", field_name)
+            })?;
+
+        entry.set_password(value)
+            .map_err(|e| {
+                log::error!("Failed to store '{}' in keyring: {}", field_name, e);
+                format!("Cannot save '{}' credential. Please check your system permissions.", field_name)
+            })?;
+
+        log::debug!("Token field '{}' stored successfully ({} chars)", field_name, value.len());
+    }
+
+    log::info!("All authentication tokens stored successfully in {} separate keyring entries", token_values.len());
+    Ok(())
+}
+
+/// Load authentication tokens from the OS keyring (from separate entries)
 pub fn load_tokens() -> Result<AuthTokens, String> {
-    log::debug!("Attempting to load authentication tokens from keyring");
+    log::debug!("Attempting to load authentication tokens from keyring (split storage mode)");
 
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| {
-            log::error!("Keyring entry creation failed: {}", e);
-            "Cannot access system keyring. Please check your system permissions.".to_string()
-        })?;
+    // Load each token field from its separate keyring entry
+    let mut token_fields = std::collections::HashMap::new();
 
-    let tokens_json = entry.get_password()
-        .map_err(|e| {
-            log::warn!("Failed to load tokens from keyring: {}", e);
-            "Not authenticated. Please log in first.".to_string()
-        })?;
+    for field_name in &TOKEN_FIELDS {
+        let username = format!("{}.{}", USERNAME_PREFIX, field_name);
+        let entry = Entry::new(SERVICE_NAME, &username)
+            .map_err(|e| {
+                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+                "Cannot access system keyring. Please check your system permissions.".to_string()
+            })?;
 
-    let tokens: AuthTokens = serde_json::from_str(&tokens_json)
+        let value = entry.get_password()
+            .map_err(|e| {
+                log::warn!("Failed to load '{}' from keyring: {}", field_name, e);
+                format!("Not authenticated. Missing token field '{}'. Please log in first.", field_name)
+            })?;
+
+        log::debug!("Token field '{}' loaded successfully ({} chars)", field_name, value.len());
+        token_fields.insert(*field_name, value);
+    }
+
+    // Reconstruct AuthTokens from individual fields
+    let expires_at = token_fields.get("expires_at")
+        .ok_or_else(|| "Missing expires_at field".to_string())?
+        .parse::<i64>()
         .map_err(|e| {
-            log::error!("Token deserialization failed: {}", e);
+            log::error!("Failed to parse expires_at as i64: {}", e);
             "Login credentials are corrupted. Please log in again.".to_string()
         })?;
 
-    log::debug!("Authentication tokens loaded successfully");
+    let tokens = AuthTokens {
+        access_token: token_fields.remove("access_token")
+            .ok_or_else(|| "Missing access_token field".to_string())?,
+        refresh_token: token_fields.remove("refresh_token")
+            .ok_or_else(|| "Missing refresh_token field".to_string())?,
+        id_token: token_fields.remove("id_token")
+            .ok_or_else(|| "Missing id_token field".to_string())?,
+        expires_at,
+        session_state: token_fields.remove("session_state")
+            .ok_or_else(|| "Missing session_state field".to_string())?,
+    };
+
+    log::info!("All authentication tokens loaded successfully from {} separate keyring entries", TOKEN_FIELDS.len());
     Ok(tokens)
 }
 
-/// Delete authentication tokens from the OS keyring
+/// Delete authentication tokens from the OS keyring (all separate entries)
 pub fn delete_tokens() -> Result<(), String> {
-    log::debug!("Attempting to delete authentication tokens from keyring");
+    log::debug!("Attempting to delete authentication tokens from keyring (split storage mode)");
 
-    let entry = Entry::new(SERVICE_NAME, USERNAME)
-        .map_err(|e| {
-            log::error!("Keyring entry creation failed: {}", e);
-            "Cannot access system keyring. Please check your system permissions.".to_string()
-        })?;
+    let mut errors = Vec::new();
+    let mut deleted_count = 0;
 
-    entry.delete_password()
-        .map_err(|e| {
-            log::error!("Failed to delete tokens from keyring: {}", e);
-            "Failed to clear login credentials. You may need to log in again manually.".to_string()
-        })?;
+    // Delete each token field from its separate keyring entry
+    for field_name in &TOKEN_FIELDS {
+        let username = format!("{}.{}", USERNAME_PREFIX, field_name);
+        let entry = Entry::new(SERVICE_NAME, &username)
+            .map_err(|e| {
+                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+                format!("Cannot access system keyring for '{}': {}", field_name, e)
+            });
 
-    log::info!("Authentication tokens deleted successfully");
+        match entry {
+            Ok(entry) => {
+                match entry.delete_password() {
+                    Ok(_) => {
+                        log::debug!("Token field '{}' deleted successfully", field_name);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to delete '{}' from keyring: {} (may not exist)", field_name, e);
+                        // Don't treat as error if entry doesn't exist
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(e);
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        log::error!("Errors occurred while deleting token entries: {:?}", errors);
+        return Err(format!("Failed to clear some login credentials: {}", errors.join(", ")));
+    }
+
+    log::info!("Authentication tokens deleted successfully ({} entries cleared)", deleted_count);
     Ok(())
 }
 
