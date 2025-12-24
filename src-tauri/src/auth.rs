@@ -14,8 +14,9 @@ static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 const SERVICE_NAME: &str = "educartable-downloader";
 const USERNAME_PREFIX: &str = "auth";
 
-// Windows Credential Manager limit per entry
-const MAX_CREDENTIAL_LENGTH: usize = 2560;
+// Windows Credential Manager limit per entry (2560)
+// Use a safe limit with margin for metadata
+const SAFE_CHUNK_SIZE: usize = 2000;
 
 // Token field names for separate keyring entries
 const TOKEN_FIELDS: [&str; 5] = [
@@ -26,47 +27,12 @@ const TOKEN_FIELDS: [&str; 5] = [
     "session_state",
 ];
 
-/// Validate that a token field doesn't exceed Windows Credential Manager limit
-fn validate_token_length(field_name: &str, value: &str) -> Result<(), String> {
-    let length = value.len();
-    if length > MAX_CREDENTIAL_LENGTH {
-        log::error!(
-            "Token field '{}' exceeds Windows Credential Manager limit: {} chars (limit: {} chars)",
-            field_name,
-            length,
-            MAX_CREDENTIAL_LENGTH
-        );
-        return Err(format!(
-            "Token field '{}' is too long ({} chars). Maximum allowed: {} chars. \
-             This is a platform limitation. Please contact support.",
-            field_name, length, MAX_CREDENTIAL_LENGTH
-        ));
-    }
-    log::debug!("Token field '{}' length validated: {} chars (within {} limit)",
-                field_name, length, MAX_CREDENTIAL_LENGTH);
-    Ok(())
-}
+/// Store a token field in keyring, splitting into chunks if necessary
+fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
+    let value_len = value.len();
 
-/// Store authentication tokens securely in the OS keyring (split into separate entries)
-pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
-    log::debug!("Attempting to store authentication tokens in keyring (split storage mode)");
-
-    // Prepare token fields as string values
-    let token_values = [
-        ("access_token", tokens.access_token.as_str()),
-        ("refresh_token", tokens.refresh_token.as_str()),
-        ("id_token", tokens.id_token.as_str()),
-        ("expires_at", &tokens.expires_at.to_string()),
-        ("session_state", tokens.session_state.as_str()),
-    ];
-
-    // First, validate all token lengths before storing anything
-    for (field_name, value) in &token_values {
-        validate_token_length(field_name, value)?;
-    }
-
-    // All validations passed, now store each token in a separate keyring entry
-    for (field_name, value) in &token_values {
+    if value_len <= SAFE_CHUNK_SIZE {
+        // Field fits in single entry, store directly
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
         let entry = Entry::new(SERVICE_NAME, &username)
             .map_err(|e| {
@@ -80,95 +46,223 @@ pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
                 format!("Cannot save '{}' credential. Please check your system permissions.", field_name)
             })?;
 
-        log::debug!("Token field '{}' stored successfully ({} chars)", field_name, value.len());
-    }
+        log::debug!("Token field '{}' stored successfully ({} chars, single entry)", field_name, value_len);
+    } else {
+        // Field needs to be chunked
+        let chunks: Vec<&str> = value.as_bytes()
+            .chunks(SAFE_CHUNK_SIZE)
+            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+            .collect();
 
-    log::info!("All authentication tokens stored successfully in {} separate keyring entries", token_values.len());
-    Ok(())
-}
+        let chunk_count = chunks.len();
 
-/// Load authentication tokens from the OS keyring (from separate entries)
-pub fn load_tokens() -> Result<AuthTokens, String> {
-    log::debug!("Attempting to load authentication tokens from keyring (split storage mode)");
+        log::debug!(
+            "Token field '{}' is {} chars, splitting into {} chunks of max {} chars each",
+            field_name, value_len, chunk_count, SAFE_CHUNK_SIZE
+        );
 
-    // Load each token field from its separate keyring entry
-    let mut token_fields = std::collections::HashMap::new();
-
-    for field_name in &TOKEN_FIELDS {
+        // Store metadata entry with chunk count
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
         let entry = Entry::new(SERVICE_NAME, &username)
             .map_err(|e| {
-                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
-                "Cannot access system keyring. Please check your system permissions.".to_string()
+                log::error!("Keyring metadata entry creation failed for '{}': {}", field_name, e);
+                format!("Cannot access system keyring for '{}'.", field_name)
             })?;
 
-        let value = entry.get_password()
+        entry.set_password(&chunk_count.to_string())
             .map_err(|e| {
-                log::warn!("Failed to load '{}' from keyring: {}", field_name, e);
-                format!("Not authenticated. Missing token field '{}'. Please log in first.", field_name)
+                log::error!("Failed to store '{}' metadata in keyring: {}", field_name, e);
+                format!("Cannot save '{}' metadata.", field_name)
             })?;
 
-        log::debug!("Token field '{}' loaded successfully ({} chars)", field_name, value.len());
-        token_fields.insert(*field_name, value);
+        log::debug!("Token field '{}' metadata stored: {} chunks", field_name, chunk_count);
+
+        // Store each chunk
+        for (index, chunk) in chunks.iter().enumerate() {
+            let chunk_index = index + 1; // 1-based indexing
+            let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
+            let entry = Entry::new(SERVICE_NAME, &username)
+                .map_err(|e| {
+                    log::error!("Keyring entry creation failed for '{}' chunk {}: {}", field_name, chunk_index, e);
+                    format!("Cannot access system keyring for '{}' chunk {}.", field_name, chunk_index)
+                })?;
+
+            entry.set_password(chunk)
+                .map_err(|e| {
+                    log::error!("Failed to store '{}' chunk {} in keyring: {}", field_name, chunk_index, e);
+                    format!("Cannot save '{}' chunk {}.", field_name, chunk_index)
+                })?;
+
+            log::debug!(
+                "Token field '{}' chunk {}/{} stored successfully ({} chars)",
+                field_name, chunk_index, chunk_count, chunk.len()
+            );
+        }
+
+        log::info!(
+            "Token field '{}' stored successfully ({} chars in {} chunks)",
+            field_name, value_len, chunk_count
+        );
     }
 
-    // Reconstruct AuthTokens from individual fields
-    let expires_at = token_fields.get("expires_at")
-        .ok_or_else(|| "Missing expires_at field".to_string())?
-        .parse::<i64>()
+    Ok(())
+}
+
+/// Load a token field from keyring, reassembling chunks if necessary
+fn load_token_field(field_name: &str) -> Result<String, String> {
+    let username = format!("{}.{}", USERNAME_PREFIX, field_name);
+    let entry = Entry::new(SERVICE_NAME, &username)
+        .map_err(|e| {
+            log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+            "Cannot access system keyring. Please check your system permissions.".to_string()
+        })?;
+
+    let value = entry.get_password()
+        .map_err(|e| {
+            log::warn!("Failed to load '{}' from keyring: {}", field_name, e);
+            format!("Not authenticated. Missing token field '{}'. Please log in first.", field_name)
+        })?;
+
+    // Check if this is metadata (chunk count) or actual data
+    if let Ok(chunk_count) = value.parse::<usize>() {
+        // This is chunked data, load all chunks
+        log::debug!("Token field '{}' is chunked, loading {} chunks", field_name, chunk_count);
+
+        let mut chunks = Vec::with_capacity(chunk_count);
+
+        for chunk_index in 1..=chunk_count {
+            let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
+            let entry = Entry::new(SERVICE_NAME, &username)
+                .map_err(|e| {
+                    log::error!("Keyring entry creation failed for '{}' chunk {}: {}", field_name, chunk_index, e);
+                    "Cannot access system keyring.".to_string()
+                })?;
+
+            let chunk = entry.get_password()
+                .map_err(|e| {
+                    log::error!("Failed to load '{}' chunk {} from keyring: {}", field_name, chunk_index, e);
+                    format!("Missing '{}' chunk {}. Please log in again.", field_name, chunk_index)
+                })?;
+
+            log::debug!("Token field '{}' chunk {}/{} loaded ({} chars)",
+                       field_name, chunk_index, chunk_count, chunk.len());
+            chunks.push(chunk);
+        }
+
+        let reassembled = chunks.join("");
+        log::info!("Token field '{}' loaded successfully ({} chars from {} chunks)",
+                   field_name, reassembled.len(), chunk_count);
+        Ok(reassembled)
+    } else {
+        // Single entry, return as-is
+        log::debug!("Token field '{}' loaded successfully ({} chars, single entry)", field_name, value.len());
+        Ok(value)
+    }
+}
+
+/// Delete a token field from keyring, including all chunks if present
+fn delete_token_field(field_name: &str) -> Result<(), String> {
+    let username = format!("{}.{}", USERNAME_PREFIX, field_name);
+    let entry = Entry::new(SERVICE_NAME, &username)
+        .map_err(|e| {
+            log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+            format!("Cannot access system keyring for '{}'.", field_name)
+        })?;
+
+    // Try to read the entry to check if it's chunked
+    if let Ok(value) = entry.get_password() {
+        if let Ok(chunk_count) = value.parse::<usize>() {
+            // This is chunked data, delete all chunks
+            log::debug!("Token field '{}' is chunked, deleting {} chunks", field_name, chunk_count);
+
+            for chunk_index in 1..=chunk_count {
+                let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
+                if let Ok(chunk_entry) = Entry::new(SERVICE_NAME, &username) {
+                    match chunk_entry.delete_password() {
+                        Ok(_) => log::debug!("Token field '{}' chunk {} deleted", field_name, chunk_index),
+                        Err(e) => log::warn!("Failed to delete '{}' chunk {}: {} (may not exist)",
+                                            field_name, chunk_index, e),
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete the main entry (either metadata or single value)
+    match entry.delete_password() {
+        Ok(_) => {
+            log::debug!("Token field '{}' deleted successfully", field_name);
+            Ok(())
+        }
+        Err(e) => {
+            log::warn!("Failed to delete '{}' from keyring: {} (may not exist)", field_name, e);
+            Ok(()) // Don't treat as error if entry doesn't exist
+        }
+    }
+}
+
+/// Store authentication tokens securely in the OS keyring (split into separate entries, chunked if needed)
+pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
+    log::info!("Attempting to store authentication tokens in keyring (split storage mode with chunking)");
+
+    // Prepare token fields as string values
+    let token_values = [
+        ("access_token", tokens.access_token.as_str()),
+        ("refresh_token", tokens.refresh_token.as_str()),
+        ("id_token", tokens.id_token.as_str()),
+        ("expires_at", &tokens.expires_at.to_string()),
+        ("session_state", tokens.session_state.as_str()),
+    ];
+
+    // Store each token field (will be automatically chunked if needed)
+    for (field_name, value) in &token_values {
+        store_token_field(field_name, value)?;
+    }
+
+    log::info!("All authentication tokens stored successfully");
+    Ok(())
+}
+
+/// Load authentication tokens from the OS keyring (from separate entries, reassembling chunks if needed)
+pub fn load_tokens() -> Result<AuthTokens, String> {
+    log::info!("Attempting to load authentication tokens from keyring (split storage mode with chunking)");
+
+    // Load each token field (will be automatically reassembled if chunked)
+    let access_token = load_token_field("access_token")?;
+    let refresh_token = load_token_field("refresh_token")?;
+    let id_token = load_token_field("id_token")?;
+    let expires_at_str = load_token_field("expires_at")?;
+    let session_state = load_token_field("session_state")?;
+
+    // Parse expires_at
+    let expires_at = expires_at_str.parse::<i64>()
         .map_err(|e| {
             log::error!("Failed to parse expires_at as i64: {}", e);
             "Login credentials are corrupted. Please log in again.".to_string()
         })?;
 
     let tokens = AuthTokens {
-        access_token: token_fields.remove("access_token")
-            .ok_or_else(|| "Missing access_token field".to_string())?,
-        refresh_token: token_fields.remove("refresh_token")
-            .ok_or_else(|| "Missing refresh_token field".to_string())?,
-        id_token: token_fields.remove("id_token")
-            .ok_or_else(|| "Missing id_token field".to_string())?,
+        access_token,
+        refresh_token,
+        id_token,
         expires_at,
-        session_state: token_fields.remove("session_state")
-            .ok_or_else(|| "Missing session_state field".to_string())?,
+        session_state,
     };
 
-    log::info!("All authentication tokens loaded successfully from {} separate keyring entries", TOKEN_FIELDS.len());
+    log::info!("All authentication tokens loaded successfully");
     Ok(tokens)
 }
 
-/// Delete authentication tokens from the OS keyring (all separate entries)
+/// Delete authentication tokens from the OS keyring (all separate entries, including chunks)
 pub fn delete_tokens() -> Result<(), String> {
-    log::debug!("Attempting to delete authentication tokens from keyring (split storage mode)");
+    log::info!("Attempting to delete authentication tokens from keyring (split storage mode with chunking)");
 
     let mut errors = Vec::new();
-    let mut deleted_count = 0;
 
-    // Delete each token field from its separate keyring entry
+    // Delete each token field (will automatically delete all chunks if present)
     for field_name in &TOKEN_FIELDS {
-        let username = format!("{}.{}", USERNAME_PREFIX, field_name);
-        let entry = Entry::new(SERVICE_NAME, &username)
-            .map_err(|e| {
-                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
-                format!("Cannot access system keyring for '{}': {}", field_name, e)
-            });
-
-        match entry {
-            Ok(entry) => {
-                match entry.delete_password() {
-                    Ok(_) => {
-                        log::debug!("Token field '{}' deleted successfully", field_name);
-                        deleted_count += 1;
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to delete '{}' from keyring: {} (may not exist)", field_name, e);
-                        // Don't treat as error if entry doesn't exist
-                    }
-                }
-            }
-            Err(e) => {
-                errors.push(e);
-            }
+        if let Err(e) = delete_token_field(field_name) {
+            errors.push(format!("{}: {}", field_name, e));
         }
     }
 
@@ -177,7 +271,7 @@ pub fn delete_tokens() -> Result<(), String> {
         return Err(format!("Failed to clear some login credentials: {}", errors.join(", ")));
     }
 
-    log::info!("Authentication tokens deleted successfully ({} entries cleared)", deleted_count);
+    log::info!("Authentication tokens deleted successfully");
     Ok(())
 }
 
