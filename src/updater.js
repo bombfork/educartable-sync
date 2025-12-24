@@ -7,9 +7,12 @@
 // Import notification system
 import { showError, showSuccess, showLoading, showInfo, handleError } from './notifications.js';
 
+// Track current update state
+let currentUpdateInfo = null;
+
 /**
  * Check for updates silently (used on startup)
- * Shows notification only if update is available
+ * Updates the UI to show current update status
  */
 export async function checkForUpdatesSilently() {
     try {
@@ -19,9 +22,10 @@ export async function checkForUpdatesSilently() {
 
         if (updateInfo.available) {
             console.log('Update available:', updateInfo.latest_version);
-            showUpdateAvailableNotification(updateInfo);
+            setUpdateAvailableUI(updateInfo);
         } else {
             console.log('No updates available');
+            setUpToDateUI(updateInfo.current_version);
         }
     } catch (error) {
         // Silent failure - don't bother user with update check errors on startup
@@ -30,10 +34,23 @@ export async function checkForUpdatesSilently() {
 }
 
 /**
- * Check for updates manually (when user clicks button)
- * Always shows a notification with the result
+ * Handle update button click - either checks for updates or downloads available update
+ * This is the main handler connected to the button
  */
-export async function checkForUpdatesManually() {
+export async function handleUpdateButtonClick() {
+    if (currentUpdateInfo && currentUpdateInfo.available) {
+        // Update is available, download it
+        await downloadAndInstallUpdate();
+    } else {
+        // No update available, check for updates
+        await checkForUpdates();
+    }
+}
+
+/**
+ * Check for updates (called when button is clicked in check mode)
+ */
+async function checkForUpdates() {
     const checkBtn = document.getElementById('check-updates-btn');
 
     // Set button to loading state
@@ -54,10 +71,10 @@ export async function checkForUpdatesManually() {
 
         if (updateInfo.available) {
             console.log('Update available:', updateInfo.latest_version);
-            showUpdateAvailableNotification(updateInfo);
+            setUpdateAvailableUI(updateInfo);
         } else {
             console.log('No updates available');
-            showSuccess(`Vous utilisez déjà la dernière version (${updateInfo.current_version})`);
+            setUpToDateUI(updateInfo.current_version);
         }
     } catch (error) {
         console.error('Update check failed:', error);
@@ -135,7 +152,7 @@ function createUpdateNotification(updateInfo) {
  * Download and install the update
  */
 async function downloadAndInstallUpdate() {
-    const loadingNotification = showLoading('Téléchargement de la mise à jour...');
+    const loadingNotification = showLoading('Téléchargement de la mise à jour... L\'application redémarrera automatiquement.');
 
     try {
         console.log('Downloading and installing update...');
@@ -266,4 +283,49 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * Set UI to show "up to date" state
+ */
+function setUpToDateUI(currentVersion) {
+    // Store state
+    currentUpdateInfo = {
+        available: false,
+        current_version: currentVersion
+    };
+
+    const statusElement = document.getElementById('update-status');
+    const checkBtn = document.getElementById('check-updates-btn');
+
+    if (statusElement) {
+        statusElement.textContent = `✓ Vous utilisez déjà la dernière version (${currentVersion})`;
+        statusElement.style.display = 'inline';
+        statusElement.style.color = '#10b981';
+    }
+
+    if (checkBtn) {
+        checkBtn.textContent = '🔄 Vérifier les mises à jour';
+    }
+}
+
+/**
+ * Set UI to show "update available" state
+ */
+function setUpdateAvailableUI(updateInfo) {
+    // Store state
+    currentUpdateInfo = updateInfo;
+
+    const statusElement = document.getElementById('update-status');
+    const checkBtn = document.getElementById('check-updates-btn');
+
+    if (statusElement) {
+        statusElement.textContent = `Mise à jour disponible : ${updateInfo.latest_version}`;
+        statusElement.style.display = 'inline';
+        statusElement.style.color = '#ef4444';
+    }
+
+    if (checkBtn) {
+        checkBtn.textContent = '⬇️ Télécharger la mise à jour';
+    }
 }
