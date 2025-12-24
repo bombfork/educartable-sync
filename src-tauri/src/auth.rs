@@ -15,8 +15,8 @@ const SERVICE_NAME: &str = "educartable-downloader";
 const USERNAME_PREFIX: &str = "auth";
 
 // Windows Credential Manager limit per entry (2560)
-// Use a safe limit with margin for metadata
-const SAFE_CHUNK_SIZE: usize = 2000;
+// Use a conservative limit with margin for metadata and encoding overhead
+const SAFE_CHUNK_SIZE: usize = 1500;
 
 // Token field names for separate keyring entries
 const TOKEN_FIELDS: [&str; 5] = [
@@ -31,6 +31,8 @@ const TOKEN_FIELDS: [&str; 5] = [
 fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
     let value_len = value.len();
 
+    log::info!("Storing token field '{}' (length: {} chars)", field_name, value_len);
+
     if value_len <= SAFE_CHUNK_SIZE {
         // Field fits in single entry, store directly
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
@@ -42,17 +44,33 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
         entry.set_password(value)
             .map_err(|e| {
-                log::error!("Failed to store '{}' in keyring: {}", field_name, e);
-                format!("Cannot save '{}' credential. Please check your system permissions.", field_name)
+                log::error!("Failed to store '{}' ({} chars) in keyring: {}", field_name, value_len, e);
+                format!("Cannot save '{}' credential ({} chars). Error: {}", field_name, value_len, e)
             })?;
 
         log::debug!("Token field '{}' stored successfully ({} chars, single entry)", field_name, value_len);
     } else {
         // Field needs to be chunked
-        let chunks: Vec<&str> = value.as_bytes()
-            .chunks(SAFE_CHUNK_SIZE)
-            .map(|chunk| std::str::from_utf8(chunk).unwrap())
-            .collect();
+        // Split at character boundaries, not byte boundaries
+        let mut chunks = Vec::new();
+        let mut current_pos = 0;
+
+        while current_pos < value.len() {
+            let remaining = &value[current_pos..];
+            let chunk_end = if remaining.len() <= SAFE_CHUNK_SIZE {
+                remaining.len()
+            } else {
+                // Find a valid UTF-8 boundary at or before SAFE_CHUNK_SIZE
+                remaining.char_indices()
+                    .take_while(|(idx, _)| *idx < SAFE_CHUNK_SIZE)
+                    .last()
+                    .map(|(idx, c)| idx + c.len_utf8())
+                    .unwrap_or(SAFE_CHUNK_SIZE)
+            };
+
+            chunks.push(&remaining[..chunk_end]);
+            current_pos += chunk_end;
+        }
 
         let chunk_count = chunks.len();
 
@@ -89,8 +107,10 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
             entry.set_password(chunk)
                 .map_err(|e| {
-                    log::error!("Failed to store '{}' chunk {} in keyring: {}", field_name, chunk_index, e);
-                    format!("Cannot save '{}' chunk {}.", field_name, chunk_index)
+                    log::error!("Failed to store '{}' chunk {} ({} chars) in keyring: {}",
+                               field_name, chunk_index, chunk.len(), e);
+                    format!("Cannot save '{}' chunk {} ({} chars). Error: {}",
+                           field_name, chunk_index, chunk.len(), e)
                 })?;
 
             log::debug!(
