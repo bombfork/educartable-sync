@@ -14,9 +14,9 @@ static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 const SERVICE_NAME: &str = "educartable-downloader";
 const USERNAME_PREFIX: &str = "auth";
 
-// Windows Credential Manager limit per entry (2560)
-// Use a conservative limit with margin for metadata and encoding overhead
-const SAFE_CHUNK_SIZE: usize = 1500;
+// Windows Credential Manager limit per entry: 2560 BYTES
+// Use byte-based chunking with safety margin for metadata and encoding overhead
+const SAFE_CHUNK_SIZE_BYTES: usize = 2000;
 
 // Token field names for separate keyring entries
 const TOKEN_FIELDS: [&str; 5] = [
@@ -29,11 +29,15 @@ const TOKEN_FIELDS: [&str; 5] = [
 
 /// Store a token field in keyring, splitting into chunks if necessary
 fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
-    let value_len = value.len();
+    let value_bytes = value.len(); // UTF-8 byte length
+    let value_chars = value.chars().count(); // Character count
 
-    log::info!("Storing token field '{}' (length: {} chars)", field_name, value_len);
+    log::info!(
+        "Storing token field '{}' (length: {} chars, {} bytes)",
+        field_name, value_chars, value_bytes
+    );
 
-    if value_len <= SAFE_CHUNK_SIZE {
+    if value_bytes <= SAFE_CHUNK_SIZE_BYTES {
         // Field fits in single entry, store directly
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
         let entry = Entry::new(SERVICE_NAME, &username)
@@ -44,39 +48,58 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
         entry.set_password(value)
             .map_err(|e| {
-                log::error!("Failed to store '{}' ({} chars) in keyring: {}", field_name, value_len, e);
-                format!("Cannot save '{}' credential ({} chars). Error: {}", field_name, value_len, e)
+                log::error!(
+                    "Failed to store '{}' ({} chars, {} bytes) in keyring: {}",
+                    field_name, value_chars, value_bytes, e
+                );
+                format!(
+                    "Cannot save '{}' credential ({} chars, {} bytes). Error: {}",
+                    field_name, value_chars, value_bytes, e
+                )
             })?;
 
-        log::debug!("Token field '{}' stored successfully ({} chars, single entry)", field_name, value_len);
+        log::debug!(
+            "Token field '{}' stored successfully ({} chars, {} bytes, single entry)",
+            field_name, value_chars, value_bytes
+        );
     } else {
-        // Field needs to be chunked
-        // Split at character boundaries, not byte boundaries
+        // Field needs to be chunked based on byte size
         let mut chunks = Vec::new();
-        let mut current_pos = 0;
+        let mut current_byte_pos = 0;
 
-        while current_pos < value.len() {
-            let remaining = &value[current_pos..];
-            let chunk_end = if remaining.len() <= SAFE_CHUNK_SIZE {
-                remaining.len()
+        while current_byte_pos < value_bytes {
+            let remaining = &value[current_byte_pos..];
+            let remaining_bytes = remaining.len();
+
+            let chunk_end_bytes = if remaining_bytes <= SAFE_CHUNK_SIZE_BYTES {
+                remaining_bytes
             } else {
-                // Find a valid UTF-8 boundary at or before SAFE_CHUNK_SIZE
-                remaining.char_indices()
-                    .take_while(|(idx, _)| *idx < SAFE_CHUNK_SIZE)
-                    .last()
-                    .map(|(idx, c)| idx + c.len_utf8())
-                    .unwrap_or(SAFE_CHUNK_SIZE)
+                // Find a valid UTF-8 character boundary at or before SAFE_CHUNK_SIZE_BYTES
+                let mut byte_pos = SAFE_CHUNK_SIZE_BYTES.min(remaining_bytes);
+
+                // Walk backwards to find a valid UTF-8 boundary
+                while byte_pos > 0 && !remaining.is_char_boundary(byte_pos) {
+                    byte_pos -= 1;
+                }
+
+                if byte_pos == 0 {
+                    // Shouldn't happen with reasonable input, but fall back to a safe value
+                    log::warn!("Could not find UTF-8 boundary, using fallback");
+                    SAFE_CHUNK_SIZE_BYTES / 2
+                } else {
+                    byte_pos
+                }
             };
 
-            chunks.push(&remaining[..chunk_end]);
-            current_pos += chunk_end;
+            chunks.push(&remaining[..chunk_end_bytes]);
+            current_byte_pos += chunk_end_bytes;
         }
 
         let chunk_count = chunks.len();
 
         log::debug!(
-            "Token field '{}' is {} chars, splitting into {} chunks of max {} chars each",
-            field_name, value_len, chunk_count, SAFE_CHUNK_SIZE
+            "Token field '{}' is {} bytes ({} chars), splitting into {} chunks of max {} bytes each",
+            field_name, value_bytes, value_chars, chunk_count, SAFE_CHUNK_SIZE_BYTES
         );
 
         // Store metadata entry with chunk count
@@ -98,6 +121,9 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
         // Store each chunk
         for (index, chunk) in chunks.iter().enumerate() {
             let chunk_index = index + 1; // 1-based indexing
+            let chunk_bytes = chunk.len();
+            let chunk_chars = chunk.chars().count();
+
             let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
             let entry = Entry::new(SERVICE_NAME, &username)
                 .map_err(|e| {
@@ -107,21 +133,25 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
             entry.set_password(chunk)
                 .map_err(|e| {
-                    log::error!("Failed to store '{}' chunk {} ({} chars) in keyring: {}",
-                               field_name, chunk_index, chunk.len(), e);
-                    format!("Cannot save '{}' chunk {} ({} chars). Error: {}",
-                           field_name, chunk_index, chunk.len(), e)
+                    log::error!(
+                        "Failed to store '{}' chunk {} ({} chars, {} bytes) in keyring: {}",
+                        field_name, chunk_index, chunk_chars, chunk_bytes, e
+                    );
+                    format!(
+                        "Cannot save '{}' chunk {} ({} chars, {} bytes). Error: {}",
+                        field_name, chunk_index, chunk_chars, chunk_bytes, e
+                    )
                 })?;
 
             log::debug!(
-                "Token field '{}' chunk {}/{} stored successfully ({} chars)",
-                field_name, chunk_index, chunk_count, chunk.len()
+                "Token field '{}' chunk {}/{} stored successfully ({} chars, {} bytes)",
+                field_name, chunk_index, chunk_count, chunk_chars, chunk_bytes
             );
         }
 
         log::info!(
-            "Token field '{}' stored successfully ({} chars in {} chunks)",
-            field_name, value_len, chunk_count
+            "Token field '{}' stored successfully ({} chars, {} bytes in {} chunks)",
+            field_name, value_chars, value_bytes, chunk_count
         );
     }
 
