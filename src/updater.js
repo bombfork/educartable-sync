@@ -152,6 +152,9 @@ function createUpdateNotification(updateInfo) {
  * Download and install the update
  */
 async function downloadAndInstallUpdate() {
+    // Show toast notification that download is starting
+    showInfo('Téléchargement démarré', 'La mise à jour est en cours de téléchargement. L\'application redémarrera automatiquement une fois le téléchargement terminé.');
+
     const loadingNotification = showLoading('Téléchargement de la mise à jour... L\'application redémarrera automatiquement.');
 
     try {
@@ -326,6 +329,6 @@ function setUpdateAvailableUI(updateInfo) {
     }
 
     if (checkBtn) {
-        checkBtn.textContent = '⬇️ Télécharger la mise à jour';
+        checkBtn.textContent = '⬇️ Télécharger et installer la nouvelle version';
     }
 }
