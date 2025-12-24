@@ -112,7 +112,7 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
             field_name, value_bytes, value_chars, chunk_count, SAFE_CHUNK_SIZE_BYTES
         );
 
-        // Store metadata entry with chunk count
+        // Store metadata entry with chunk count (with prefix to avoid confusion with numeric data)
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
         let entry = Entry::new(SERVICE_NAME, &username)
             .map_err(|e| {
@@ -120,7 +120,9 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
                 format!("Cannot access system keyring for '{}'.", field_name)
             })?;
 
-        entry.set_password(&chunk_count.to_string())
+        // Use "CHUNKS:" prefix to distinguish metadata from numeric data (e.g., timestamps)
+        let metadata = format!("CHUNKS:{}", chunk_count);
+        entry.set_password(&metadata)
             .map_err(|e| {
                 log::error!("Failed to store '{}' metadata in keyring: {}", field_name, e);
                 format!("Cannot save '{}' metadata.", field_name)
@@ -184,7 +186,14 @@ fn load_token_field(field_name: &str) -> Result<String, String> {
         })?;
 
     // Check if this is metadata (chunk count) or actual data
-    if let Ok(chunk_count) = value.parse::<usize>() {
+    // Metadata has "CHUNKS:" prefix to avoid confusion with numeric data
+    if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
+        let chunk_count = chunk_count_str.parse::<usize>()
+            .map_err(|e| {
+                log::error!("Failed to parse chunk count for '{}': {}", field_name, e);
+                format!("Corrupted metadata for '{}'. Please log in again.", field_name)
+            })?;
+
         // This is chunked data, load all chunks
         log::debug!("Token field '{}' is chunked, loading {} chunks", field_name, chunk_count);
 
@@ -231,17 +240,20 @@ fn delete_token_field(field_name: &str) -> Result<(), String> {
 
     // Try to read the entry to check if it's chunked
     if let Ok(value) = entry.get_password() {
-        if let Ok(chunk_count) = value.parse::<usize>() {
-            // This is chunked data, delete all chunks
-            log::debug!("Token field '{}' is chunked, deleting {} chunks", field_name, chunk_count);
+        // Check for "CHUNKS:" prefix to identify metadata
+        if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
+            if let Ok(chunk_count) = chunk_count_str.parse::<usize>() {
+                // This is chunked data, delete all chunks
+                log::debug!("Token field '{}' is chunked, deleting {} chunks", field_name, chunk_count);
 
-            for chunk_index in 1..=chunk_count {
-                let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
-                if let Ok(chunk_entry) = Entry::new(SERVICE_NAME, &username) {
-                    match chunk_entry.delete_password() {
-                        Ok(_) => log::debug!("Token field '{}' chunk {} deleted", field_name, chunk_index),
-                        Err(e) => log::warn!("Failed to delete '{}' chunk {}: {} (may not exist)",
-                                            field_name, chunk_index, e),
+                for chunk_index in 1..=chunk_count {
+                    let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
+                    if let Ok(chunk_entry) = Entry::new(SERVICE_NAME, &username) {
+                        match chunk_entry.delete_password() {
+                            Ok(_) => log::debug!("Token field '{}' chunk {} deleted", field_name, chunk_index),
+                            Err(e) => log::warn!("Failed to delete '{}' chunk {}: {} (may not exist)",
+                                                field_name, chunk_index, e),
+                        }
                     }
                 }
             }
