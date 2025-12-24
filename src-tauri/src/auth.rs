@@ -14,9 +14,19 @@ static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 const SERVICE_NAME: &str = "educartable-downloader";
 const USERNAME_PREFIX: &str = "auth";
 
-// Windows Credential Manager limit per entry: 2560 BYTES
-// Use byte-based chunking with safety margin for metadata and encoding overhead
-const SAFE_CHUNK_SIZE_BYTES: usize = 2000;
+// Windows Credential Manager limit per entry: 2560 BYTES (in UTF-16)
+//
+// CRITICAL: Windows stores credentials as UTF-16, while we measure in UTF-8 bytes.
+// For ASCII/base64 tokens (typical for JWTs):
+//   - 1 UTF-8 byte = 1 character = 2 UTF-16 bytes
+//   - Example: 1849 UTF-8 bytes → 3698 UTF-16 bytes > 2560 limit ❌
+//
+// Safe chunk size calculation:
+//   - Windows limit: 2560 UTF-16 bytes
+//   - Divide by 2: 1280 UTF-8 bytes (for pure ASCII)
+//   - Safety margin (20%): 1024 UTF-8 bytes
+//   - Final value: 1000 UTF-8 bytes → 2000 UTF-16 bytes < 2560 ✓
+const SAFE_CHUNK_SIZE_BYTES: usize = 1000;
 
 // Token field names for separate keyring entries
 const TOKEN_FIELDS: [&str; 5] = [
