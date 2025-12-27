@@ -119,6 +119,17 @@ function showNotification(notification) {
     setTimeout(() => {
         notification.classList.add('notification-show');
     }, 10);
+
+    // Auto-dismiss non-error notifications after 5 seconds
+    const notificationType = notification.className.match(/notification-(\w+)/)?.[1];
+    if (notificationType && notificationType !== 'error') {
+        setTimeout(() => {
+            // Check if notification still exists in DOM before dismissing
+            if (notification.parentNode) {
+                dismissNotification(notification);
+            }
+        }, 5000);
+    }
 }
 
 /**
