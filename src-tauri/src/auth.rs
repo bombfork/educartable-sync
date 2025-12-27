@@ -500,6 +500,104 @@ pub async fn logout() -> Result<(), String> {
     Ok(())
 }
 
+/// Refresh access token using the refresh token
+/// Returns new AuthTokens with updated access_token, refresh_token, and expires_at
+pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, String> {
+    log::info!("Attempting to refresh access token");
+
+    let client = reqwest::Client::new();
+    let token_url = "https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token";
+
+    // Prepare form data for token refresh
+    let params = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+        ("client_id", "educlasse"),
+    ];
+
+    log::debug!("Sending token refresh request to Keycloak");
+    let response = client
+        .post(token_url)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| {
+            log::error!("Token refresh request failed: {}", e);
+            format!("Failed to connect to authentication server: {}", e)
+        })?;
+
+    let status = response.status();
+    log::debug!("Token refresh response status: {}", status);
+
+    if !status.is_success() {
+        let error_body = response.text().await.unwrap_or_default();
+        log::error!("Token refresh failed with status {}: {}", status, error_body);
+        return Err(format!("Token refresh failed. Please log in again."));
+    }
+
+    // Parse the response
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+        refresh_token: String,
+        id_token: String,
+        expires_in: i64,
+        session_state: String,
+    }
+
+    let token_response: TokenResponse = response.json().await.map_err(|e| {
+        log::error!("Failed to parse token refresh response: {}", e);
+        "Invalid response from authentication server. Please log in again.".to_string()
+    })?;
+
+    // Calculate expires_at timestamp
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let expires_at = now + token_response.expires_in;
+
+    let tokens = AuthTokens {
+        access_token: token_response.access_token,
+        refresh_token: token_response.refresh_token,
+        id_token: token_response.id_token,
+        expires_at,
+        session_state: token_response.session_state,
+    };
+
+    // Store the new tokens
+    store_tokens(&tokens)?;
+
+    log::info!("Access token refreshed successfully, expires at {}", expires_at);
+    Ok(tokens)
+}
+
+/// Get valid access token, refreshing if necessary
+/// This function should be used by API client to ensure tokens are always valid
+pub async fn get_valid_access_token() -> Result<String, String> {
+    log::debug!("Getting valid access token");
+
+    let tokens = load_tokens().map_err(|_| {
+        log::debug!("No tokens found in storage");
+        "Not authenticated. Please log in first.".to_string()
+    })?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Check if access token is expired or will expire in the next 60 seconds
+    if tokens.expires_at <= now + 60 {
+        log::info!("Access token expired or expiring soon, attempting refresh");
+        let new_tokens = refresh_access_token(&tokens.refresh_token).await?;
+        Ok(new_tokens.access_token)
+    } else {
+        log::debug!("Access token is still valid");
+        Ok(tokens.access_token)
+    }
+}
+
 #[tauri::command]
 pub async fn is_authenticated() -> Result<bool, String> {
     log::debug!("Checking authentication status");
@@ -512,9 +610,27 @@ pub async fn is_authenticated() -> Result<bool, String> {
                 .unwrap()
                 .as_secs() as i64;
 
-            let is_valid = tokens.expires_at > now;
-            log::debug!("Authentication status: {}", if is_valid { "valid" } else { "expired" });
-            Ok(is_valid)
+            // Consider authenticated if we have tokens, even if access token is expired
+            // (as long as we can potentially refresh)
+            // For a more accurate check, we'd need to decode the refresh token's expiration
+            // For now, we'll try to refresh if access token is expired
+            if tokens.expires_at > now {
+                log::debug!("Authentication status: valid (access token not expired)");
+                Ok(true)
+            } else {
+                // Access token expired, try to refresh
+                log::debug!("Access token expired, attempting refresh to verify authentication");
+                match refresh_access_token(&tokens.refresh_token).await {
+                    Ok(_) => {
+                        log::debug!("Authentication status: valid (token refreshed successfully)");
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        log::debug!("Authentication status: invalid (refresh failed: {})", e);
+                        Ok(false)
+                    }
+                }
+            }
         }
         Err(_) => {
             log::debug!("Authentication status: not authenticated");

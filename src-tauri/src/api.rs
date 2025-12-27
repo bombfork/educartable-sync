@@ -2,19 +2,25 @@
 use reqwest::Client;
 use serde::Deserialize;
 use crate::models::{UserInfo, UserInfoResponse, ActivitiesResponse, Activity};
+use crate::auth;
 
 pub struct EducartableClient {
     client: Client,
-    access_token: String,
 }
 
 impl EducartableClient {
-    pub fn new(access_token: String) -> Self {
+    pub fn new() -> Self {
         log::debug!("Creating new EducartableClient");
         Self {
             client: Client::new(),
-            access_token,
         }
+    }
+
+    /// Get a valid access token, automatically refreshing if needed
+    async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        auth::get_valid_access_token()
+            .await
+            .map_err(|e| e.into())
     }
 
     async fn get<T: for<'de> Deserialize<'de>>(
@@ -23,9 +29,11 @@ impl EducartableClient {
     ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("GET request: {}", url);
 
+        let access_token = self.get_access_token().await?;
+
         let response = self.client
             .get(url)
-            .header("Authorization", &self.access_token)  // NO "Bearer"!
+            .header("Authorization", &access_token)  // NO "Bearer"!
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header("X-Edumoov-NoSession", "true")
@@ -52,9 +60,11 @@ impl EducartableClient {
         log::info!("Fetching user info");
         let url = "https://app.educartable.com/api/1.0/educore/users/me?light=1";
 
+        let access_token = self.get_access_token().await?;
+
         let response = self.client
             .get(url)
-            .header("Authorization", &self.access_token)
+            .header("Authorization", &access_token)
             .send()
             .await?;
 
@@ -123,12 +133,14 @@ impl EducartableClient {
             media_id, filename
         );
 
+        let access_token = self.get_access_token().await?;
+
         // Disable automatic redirect following to capture the Location header
         let response = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()?
             .get(&url)
-            .header("Authorization", &self.access_token)
+            .header("Authorization", &access_token)
             .send()
             .await?;
 

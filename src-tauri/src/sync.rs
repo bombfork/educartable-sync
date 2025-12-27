@@ -366,9 +366,9 @@ pub async fn start_sync(
 ) -> Result<SyncStats, String> {
     log::info!("Sync command invoked");
 
-    // Load authentication tokens
-    log::debug!("Loading authentication tokens");
-    let tokens = crate::auth::load_tokens()
+    // Verify authentication (this will also attempt token refresh if needed)
+    log::debug!("Verifying authentication");
+    crate::auth::load_tokens()
         .map_err(|e| {
             log::error!("Not authenticated: {}", e);
             e  // Pass through the user-friendly message from auth module
@@ -382,8 +382,8 @@ pub async fn start_sync(
 
     log::info!("Sync directory: {:?}", config.sync_path);
 
-    // Create API client
-    let api_client = EducartableClient::new(tokens.access_token);
+    // Create API client (will fetch and refresh tokens automatically)
+    let api_client = EducartableClient::new();
 
     // Create sync engine
     let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
