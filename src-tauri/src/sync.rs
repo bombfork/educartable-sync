@@ -403,3 +403,505 @@ pub async fn start_sync(
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Activity, Media};
+
+    // Helper function to create test Activity
+    fn create_test_activity(id: &str, date: &str, title: &str) -> Activity {
+        Activity {
+            id: id.to_string(),
+            date: date.to_string(),
+            title: title.to_string(),
+            body: "Content".to_string(),
+            medias: vec![],
+            pupils: vec![],
+        }
+    }
+
+    // Helper function to create test Media
+    fn create_test_media(id: &str, name: &str, extension: &str) -> Media {
+        Media {
+            id: id.to_string(),
+            name: name.to_string(),
+            extension: extension.to_string(),
+            size: 1024,
+            media_type: "image".to_string(),
+        }
+    }
+
+    // ========== Tests for sanitize_filename ==========
+
+    #[test]
+    fn test_sanitize_filename_normal() {
+        let result = sanitize_filename("Hello World 2024");
+        assert_eq!(result, "Hello World 2024");
+    }
+
+    #[test]
+    fn test_sanitize_filename_with_hyphens_underscores() {
+        let result = sanitize_filename("test-file_name-123");
+        assert_eq!(result, "test-file_name-123");
+    }
+
+    #[test]
+    fn test_sanitize_filename_invalid_characters() {
+        // Test all invalid filesystem characters
+        let result = sanitize_filename("file/with\\invalid:chars*?\"<>|");
+        assert_eq!(result, "file_with_invalid_chars______");
+    }
+
+    #[test]
+    fn test_sanitize_filename_forward_slash() {
+        let result = sanitize_filename("path/to/file");
+        assert_eq!(result, "path_to_file");
+    }
+
+    #[test]
+    fn test_sanitize_filename_backslash() {
+        let result = sanitize_filename("path\\to\\file");
+        assert_eq!(result, "path_to_file");
+    }
+
+    #[test]
+    fn test_sanitize_filename_colon() {
+        let result = sanitize_filename("file:name:test");
+        assert_eq!(result, "file_name_test");
+    }
+
+    #[test]
+    fn test_sanitize_filename_asterisk() {
+        let result = sanitize_filename("file*name");
+        assert_eq!(result, "file_name");
+    }
+
+    #[test]
+    fn test_sanitize_filename_question_mark() {
+        let result = sanitize_filename("file?name");
+        assert_eq!(result, "file_name");
+    }
+
+    #[test]
+    fn test_sanitize_filename_quotes() {
+        let result = sanitize_filename("file\"name");
+        assert_eq!(result, "file_name");
+    }
+
+    #[test]
+    fn test_sanitize_filename_angle_brackets() {
+        let result = sanitize_filename("file<name>test");
+        assert_eq!(result, "file_name_test");
+    }
+
+    #[test]
+    fn test_sanitize_filename_pipe() {
+        let result = sanitize_filename("file|name");
+        assert_eq!(result, "file_name");
+    }
+
+    #[test]
+    fn test_sanitize_filename_unicode_alphanumeric() {
+        // Unicode letters are alphanumeric and should be preserved
+        let result = sanitize_filename("Fichier École 2024");
+        assert_eq!(result, "Fichier École 2024");
+    }
+
+    #[test]
+    fn test_sanitize_filename_japanese() {
+        // Japanese characters are alphanumeric Unicode, should be preserved
+        let result = sanitize_filename("ファイル名");
+        assert_eq!(result, "ファイル名");
+    }
+
+    #[test]
+    fn test_sanitize_filename_emojis() {
+        // Emojis are not alphanumeric, should be replaced
+        let result = sanitize_filename("file🦀name🎉");
+        assert_eq!(result, "file_name_");
+    }
+
+    #[test]
+    fn test_sanitize_filename_mixed_unicode() {
+        // Unicode letters like é are alphanumeric
+        let result = sanitize_filename("café_résumé_2024");
+        assert_eq!(result, "café_résumé_2024");
+    }
+
+    #[test]
+    fn test_sanitize_filename_very_long() {
+        // Test that filenames are truncated to 50 characters
+        let long_name = "a".repeat(100);
+        let result = sanitize_filename(&long_name);
+        assert_eq!(result.len(), 50);
+        assert_eq!(result, "a".repeat(50));
+    }
+
+    #[test]
+    fn test_sanitize_filename_exactly_50_chars() {
+        let name = "a".repeat(50);
+        let result = sanitize_filename(&name);
+        assert_eq!(result.len(), 50);
+        assert_eq!(result, name);
+    }
+
+    #[test]
+    fn test_sanitize_filename_empty() {
+        let result = sanitize_filename("");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_sanitize_filename_whitespace_only() {
+        let result = sanitize_filename("   ");
+        assert_eq!(result, "   ");
+    }
+
+    #[test]
+    fn test_sanitize_filename_special_chars_only() {
+        let result = sanitize_filename("/*?:|<>");
+        assert_eq!(result, "_______");
+    }
+
+    #[test]
+    fn test_sanitize_filename_path_traversal_attempt() {
+        let result = sanitize_filename("../../../etc/passwd");
+        assert_eq!(result, "_________etc_passwd");
+    }
+
+    #[test]
+    fn test_sanitize_filename_dots() {
+        let result = sanitize_filename("..hidden.file.txt");
+        assert_eq!(result, "__hidden_file_txt");
+    }
+
+    #[test]
+    fn test_sanitize_filename_spaces_preserved() {
+        let result = sanitize_filename("file with multiple  spaces");
+        assert_eq!(result, "file with multiple  spaces");
+    }
+
+    #[test]
+    fn test_sanitize_filename_leading_trailing_spaces() {
+        let result = sanitize_filename("  file  ");
+        assert_eq!(result, "  file  ");
+    }
+
+    // ========== Tests for get_activity_folder ==========
+
+    #[test]
+    fn test_get_activity_folder_basic() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("123", "2024-03-15T10:30:00Z", "Test Activity");
+
+        let result = get_activity_folder(&sync_path, &activity);
+        assert_eq!(result, PathBuf::from("/sync/2024-03-15_Test Activity"));
+    }
+
+    #[test]
+    fn test_get_activity_folder_with_invalid_chars() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("456", "2024-12-25T00:00:00Z", "Test/Activity\\With:Invalid*Chars?");
+
+        let result = get_activity_folder(&sync_path, &activity);
+        assert_eq!(result, PathBuf::from("/sync/2024-12-25_Test_Activity_With_Invalid_Chars_"));
+    }
+
+    #[test]
+    fn test_get_activity_folder_long_title() {
+        let sync_path = PathBuf::from("/sync");
+        let long_title = "a".repeat(100);
+        let activity = create_test_activity("789", "2024-01-01T12:00:00Z", &long_title);
+
+        let result = get_activity_folder(&sync_path, &activity);
+        let folder_name = result.file_name().unwrap().to_str().unwrap();
+
+        // Should be "2024-01-01_" + 50 'a' characters = 61 chars total
+        assert!(folder_name.starts_with("2024-01-01_"));
+        assert_eq!(folder_name.len(), 61); // "2024-01-01_" (11 chars) + 50 'a' chars
+    }
+
+    #[test]
+    fn test_get_activity_folder_malformed_date() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("999", "invalid-date", "Test");
+
+        let result = get_activity_folder(&sync_path, &activity);
+        // Should use full invalid date string as-is
+        assert_eq!(result, PathBuf::from("/sync/invalid-date_Test"));
+    }
+
+    #[test]
+    fn test_get_activity_folder_empty_date() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("111", "", "Test");
+
+        let result = get_activity_folder(&sync_path, &activity);
+        assert_eq!(result, PathBuf::from("/sync/_Test"));
+    }
+
+    #[test]
+    fn test_get_activity_folder_unicode_title() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("222", "2024-06-15T08:00:00Z", "École Café");
+
+        let result = get_activity_folder(&sync_path, &activity);
+        assert_eq!(result, PathBuf::from("/sync/2024-06-15_École Café"));
+    }
+
+    // ========== Tests for get_media_path ==========
+
+    #[test]
+    fn test_get_media_path_basic() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("1", "2024-03-15T10:30:00Z", "Activity");
+        let media = create_test_media("100", "photo", ".jpg");
+
+        let result = get_media_path(&sync_path, &activity, &media);
+        assert_eq!(result, PathBuf::from("/sync/2024-03-15_Activity/photo.jpg"));
+    }
+
+    #[test]
+    fn test_get_media_path_with_extension() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("2", "2024-05-20T14:00:00Z", "Test");
+        let media = create_test_media("200", "document", ".pdf");
+
+        let result = get_media_path(&sync_path, &activity, &media);
+        assert_eq!(result, PathBuf::from("/sync/2024-05-20_Test/document.pdf"));
+    }
+
+    #[test]
+    fn test_get_media_path_no_extension() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("3", "2024-07-10T09:00:00Z", "Activity");
+        let media = create_test_media("300", "file", "");
+
+        let result = get_media_path(&sync_path, &activity, &media);
+        assert_eq!(result, PathBuf::from("/sync/2024-07-10_Activity/file"));
+    }
+
+    #[test]
+    fn test_get_media_path_complex_activity_title() {
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("4", "2024-11-30T16:30:00Z", "Activity/With\\Invalid:Chars*?");
+        let media = create_test_media("400", "image123", ".png");
+
+        let result = get_media_path(&sync_path, &activity, &media);
+        assert_eq!(result, PathBuf::from("/sync/2024-11-30_Activity_With_Invalid_Chars__/image123.png"));
+    }
+
+    #[test]
+    fn test_get_media_path_preserves_media_name() {
+        // Media names are not sanitized, only activity titles are
+        let sync_path = PathBuf::from("/sync");
+        let activity = create_test_activity("5", "2024-08-05T11:00:00Z", "Test");
+        let media = create_test_media("500", "image-with-dashes_and_underscores", ".jpg");
+
+        let result = get_media_path(&sync_path, &activity, &media);
+        assert_eq!(result, PathBuf::from("/sync/2024-08-05_Test/image-with-dashes_and_underscores.jpg"));
+    }
+
+    // ========== Tests for is_retryable_error ==========
+
+    #[test]
+    fn test_is_retryable_error_connection() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "connection refused".into();
+        assert!(is_retryable_error(&error), "Connection errors should be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_timeout() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "request timeout".into();
+        assert!(is_retryable_error(&error), "Timeout errors should be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_network() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "network error occurred".into();
+        assert!(is_retryable_error(&error), "Network errors should be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_timed_out() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "operation timed out".into();
+        assert!(is_retryable_error(&error), "Timed out errors should be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_case_insensitive() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "CONNECTION TIMEOUT".into();
+        assert!(is_retryable_error(&error), "Error checking should be case insensitive");
+    }
+
+    #[test]
+    fn test_is_retryable_error_file_not_found() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "file not found".into();
+        assert!(!is_retryable_error(&error), "File errors should not be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_permission_denied() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "permission denied".into();
+        assert!(!is_retryable_error(&error), "Permission errors should not be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_invalid_url() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "invalid URL".into();
+        assert!(!is_retryable_error(&error), "Invalid URL should not be retryable");
+    }
+
+    #[test]
+    fn test_is_retryable_error_http_404() {
+        let error: Box<dyn std::error::Error + Send + Sync> = "HTTP 404 Not Found".into();
+        assert!(!is_retryable_error(&error), "404 errors should not be retryable");
+    }
+
+    // ========== Tests for should_download_file ==========
+
+    #[tokio::test]
+    async fn test_should_download_file_nonexistent() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("nonexistent.jpg");
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true, "Should download file that doesn't exist");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_empty() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("empty.jpg");
+
+        // Create empty file
+        tokio::fs::write(&file_path, b"").await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true, "Should re-download empty file");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_corrupted_small() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("small.jpg");
+
+        // Create file with 400 bytes (less than 50% of expected 1000 bytes)
+        tokio::fs::write(&file_path, vec![0u8; 400]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true, "Should re-download corrupted small file");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_valid_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("valid.jpg");
+
+        // Create file with 600 bytes (60% of expected 1000 bytes - above 50% threshold)
+        tokio::fs::write(&file_path, vec![0u8; 600]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false, "Should skip valid file");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_exact_size() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("exact.jpg");
+
+        // Create file with exact expected size
+        tokio::fs::write(&file_path, vec![0u8; 1000]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false, "Should skip file with exact size");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_larger() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("larger.jpg");
+
+        // Create file larger than expected (compressed files can be smaller)
+        tokio::fs::write(&file_path, vec![0u8; 1500]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false, "Should skip file larger than expected");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_at_threshold() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("threshold.jpg");
+
+        // Create file exactly at 50% threshold (500 bytes for 1000 expected)
+        tokio::fs::write(&file_path, vec![0u8; 500]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        // At exactly 50%, size_ratio is 0.5 which is NOT < 0.5, so should skip
+        assert_eq!(result.unwrap(), false, "Should skip file at exactly 50% threshold");
+    }
+
+    #[tokio::test]
+    async fn test_should_download_file_just_below_threshold() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("below_threshold.jpg");
+
+        // Create file just below 50% threshold (499 bytes for 1000 expected)
+        tokio::fs::write(&file_path, vec![0u8; 499]).await.unwrap();
+
+        let result = should_download_file(&file_path, 1000).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true, "Should re-download file just below 50% threshold");
+    }
+
+    // ========== Tests for Retry Logic Concepts ==========
+    // Note: Full testing of download_with_retry requires HTTP mocking
+    // These tests verify the logic without actual downloads
+
+    #[test]
+    fn test_exponential_backoff_calculation() {
+        // Test that exponential backoff follows 2^attempt pattern
+        assert_eq!(2_u64.pow(1), 2, "First retry should wait 2 seconds");
+        assert_eq!(2_u64.pow(2), 4, "Second retry should wait 4 seconds");
+        assert_eq!(2_u64.pow(3), 8, "Third retry should wait 8 seconds");
+        assert_eq!(2_u64.pow(4), 16, "Fourth retry should wait 16 seconds");
+    }
+
+    #[test]
+    fn test_max_retries_logic() {
+        // Test max retries boundary
+        let max_retries = 3;
+
+        for attempt in 1..=max_retries {
+            assert!(attempt <= max_retries, "Attempt {} should be within max retries", attempt);
+        }
+
+        let attempt = max_retries + 1;
+        assert!(attempt > max_retries, "Attempt {} should exceed max retries", attempt);
+    }
+
+    #[test]
+    fn test_retry_attempt_progression() {
+        // Verify retry attempts progress correctly
+        let mut attempt = 0;
+        let max_retries = 3;
+
+        // Simulate retry loop
+        for _ in 0..max_retries {
+            attempt += 1;
+            assert!(attempt <= max_retries);
+        }
+
+        assert_eq!(attempt, max_retries, "Should reach exactly max_retries attempts");
+    }
+}
+

@@ -109,3 +109,141 @@ pub async fn select_sync_directory(app_handle: AppHandle) -> Result<String, Stri
     // Convert FilePath to String
     Ok(path_string)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile;
+
+    // ========== Tests for AppConfig Serialization ==========
+
+    #[test]
+    fn test_config_serialization() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("/test/path"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("sync_path"));
+        assert!(json.contains("/test/path"));
+    }
+
+    #[test]
+    fn test_config_deserialization() {
+        let json = r#"{"sync_path":"/test/path"}"#;
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.sync_path, PathBuf::from("/test/path"));
+    }
+
+    #[test]
+    fn test_config_serialization_empty_path() {
+        let config = AppConfig {
+            sync_path: PathBuf::new(),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.sync_path, PathBuf::new());
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("/home/user/photos"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.sync_path, deserialized.sync_path);
+    }
+
+    #[test]
+    fn test_config_pretty_print() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("/test/path"),
+        };
+
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        assert!(json.contains("sync_path"));
+        assert!(json.contains("\n")); // Pretty print includes newlines
+    }
+
+    #[test]
+    fn test_config_invalid_json() {
+        let invalid_json = r#"{"sync_path": invalid}"#;
+        let result: Result<AppConfig, _> = serde_json::from_str(invalid_json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_missing_field() {
+        let json = r#"{}"#;
+        let result: Result<AppConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err()); // sync_path is required
+    }
+
+    #[test]
+    fn test_config_with_unicode_path() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("/home/用户/École/café"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.sync_path, deserialized.sync_path);
+    }
+
+    #[test]
+    fn test_config_with_windows_path() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("C:\\Users\\Test\\Documents"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.sync_path, deserialized.sync_path);
+    }
+
+    // ========== File Operation Tests ==========
+
+    #[test]
+    fn test_config_file_write_read() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.json");
+
+        let config = AppConfig {
+            sync_path: PathBuf::from("/test/sync/path"),
+        };
+
+        // Write config
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        fs::write(&config_path, json).unwrap();
+
+        // Read config back
+        let read_json = fs::read_to_string(&config_path).unwrap();
+        let read_config: AppConfig = serde_json::from_str(&read_json).unwrap();
+
+        assert_eq!(config.sync_path, read_config.sync_path);
+    }
+
+    #[test]
+    fn test_default_config() {
+        let config = AppConfig {
+            sync_path: PathBuf::new(),
+        };
+
+        assert_eq!(config.sync_path, PathBuf::new());
+    }
+
+    #[test]
+    fn test_config_with_relative_path() {
+        let config = AppConfig {
+            sync_path: PathBuf::from("./relative/path"),
+        };
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.sync_path, deserialized.sync_path);
+    }
+}

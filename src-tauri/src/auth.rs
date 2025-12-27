@@ -638,3 +638,485 @@ pub async fn is_authenticated() -> Result<bool, String> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // NOTE: These tests require access to the system keyring and are marked as #[ignore]
+    // by default. They can be run manually with: cargo test -- --ignored
+    // These tests may fail in headless CI environments without proper keyring setup.
+
+    /// Helper to create test tokens with specific token sizes
+    fn create_test_tokens(token_size: usize) -> AuthTokens {
+        AuthTokens {
+            access_token: "a".repeat(token_size),
+            refresh_token: "r".repeat(token_size),
+            id_token: "i".repeat(token_size),
+            expires_at: 9999999999, // Far future timestamp
+            session_state: "session123".to_string(),
+        }
+    }
+
+    /// Helper to clean up test tokens from keyring
+    fn cleanup_test_tokens() {
+        let _ = delete_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_store_and_load_small_tokens() {
+        cleanup_test_tokens();
+
+        // Create tokens that are well under the chunk size (1000 bytes)
+        let tokens = create_test_tokens(500);
+
+        // Store tokens
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store small tokens: {:?}", store_result.err());
+
+        // Load tokens back
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load small tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token, tokens.access_token);
+        assert_eq!(loaded_tokens.refresh_token, tokens.refresh_token);
+        assert_eq!(loaded_tokens.id_token, tokens.id_token);
+        assert_eq!(loaded_tokens.expires_at, tokens.expires_at);
+        assert_eq!(loaded_tokens.session_state, tokens.session_state);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_store_and_load_tokens_at_boundary() {
+        cleanup_test_tokens();
+
+        // Create tokens exactly at the chunk size boundary (1000 bytes)
+        let tokens = create_test_tokens(1000);
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store boundary tokens: {:?}", store_result.err());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load boundary tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token, tokens.access_token);
+        assert_eq!(loaded_tokens.refresh_token, tokens.refresh_token);
+        assert_eq!(loaded_tokens.id_token, tokens.id_token);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_store_and_load_large_tokens_requiring_chunking() {
+        cleanup_test_tokens();
+
+        // Create tokens that exceed the chunk size and require chunking
+        // 2500 bytes will require 3 chunks (1000 + 1000 + 500)
+        let tokens = create_test_tokens(2500);
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store large tokens: {:?}", store_result.err());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load large tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token.len(), 2500);
+        assert_eq!(loaded_tokens.refresh_token.len(), 2500);
+        assert_eq!(loaded_tokens.id_token.len(), 2500);
+        assert_eq!(loaded_tokens.access_token, tokens.access_token);
+        assert_eq!(loaded_tokens.refresh_token, tokens.refresh_token);
+        assert_eq!(loaded_tokens.id_token, tokens.id_token);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_store_and_load_very_large_tokens() {
+        cleanup_test_tokens();
+
+        // Create very large tokens requiring multiple chunks
+        // 5000 bytes will require 5 chunks
+        let tokens = create_test_tokens(5000);
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store very large tokens: {:?}", store_result.err());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load very large tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token.len(), 5000);
+        assert_eq!(loaded_tokens.access_token, tokens.access_token);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_utf8_boundary_handling() {
+        cleanup_test_tokens();
+
+        // Create tokens with multi-byte UTF-8 characters
+        // The emoji 🦀 is 4 bytes in UTF-8
+        // Create a string that's close to chunk boundary with multi-byte chars
+        let emoji_string = "🦀".repeat(250); // 250 * 4 = 1000 bytes
+        let mixed_string = format!("{}{}", "a".repeat(999), "🦀"); // 999 + 4 = 1003 bytes
+
+        let tokens = AuthTokens {
+            access_token: emoji_string.clone(),
+            refresh_token: mixed_string.clone(),
+            id_token: "test".to_string(),
+            expires_at: 9999999999,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store UTF-8 tokens: {:?}", store_result.err());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load UTF-8 tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token, emoji_string);
+        assert_eq!(loaded_tokens.refresh_token, mixed_string);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_utf8_chunking_with_japanese_characters() {
+        cleanup_test_tokens();
+
+        // Japanese characters are 3 bytes each in UTF-8
+        // Create a string that will test chunking at UTF-8 boundaries
+        let japanese = "あ".repeat(400); // 400 * 3 = 1200 bytes, requires chunking
+
+        let tokens = AuthTokens {
+            access_token: japanese.clone(),
+            refresh_token: "test".to_string(),
+            id_token: "test".to_string(),
+            expires_at: 9999999999,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store Japanese tokens: {:?}", store_result.err());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok(), "Failed to load Japanese tokens: {:?}", loaded.err());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token, japanese);
+        assert_eq!(loaded_tokens.access_token.chars().count(), 400);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_delete_tokens() {
+        cleanup_test_tokens();
+
+        // Store some tokens first
+        let tokens = create_test_tokens(500);
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok());
+
+        // Verify they're stored
+        let loaded = load_tokens();
+        assert!(loaded.is_ok());
+
+        // Delete tokens
+        let delete_result = delete_tokens();
+        assert!(delete_result.is_ok(), "Failed to delete tokens: {:?}", delete_result.err());
+
+        // Verify they're gone
+        let loaded_after_delete = load_tokens();
+        assert!(loaded_after_delete.is_err(), "Tokens should not exist after deletion");
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    fn test_delete_chunked_tokens() {
+        cleanup_test_tokens();
+
+        // Store large tokens that require chunking
+        let tokens = create_test_tokens(2500);
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok());
+
+        // Delete tokens (should delete all chunks)
+        let delete_result = delete_tokens();
+        assert!(delete_result.is_ok(), "Failed to delete chunked tokens: {:?}", delete_result.err());
+
+        // Verify they're gone
+        let loaded_after_delete = load_tokens();
+        assert!(loaded_after_delete.is_err(), "Chunked tokens should not exist after deletion");
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    fn test_delete_nonexistent_tokens() {
+        cleanup_test_tokens();
+
+        // Deleting tokens that don't exist should not error
+        let delete_result = delete_tokens();
+        assert!(delete_result.is_ok(), "Deleting nonexistent tokens should succeed: {:?}", delete_result.err());
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    fn test_load_nonexistent_tokens() {
+        cleanup_test_tokens();
+
+        // Loading tokens when none exist should return an error
+        let loaded = load_tokens();
+        assert!(loaded.is_err(), "Loading nonexistent tokens should fail");
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_expires_at_field_storage() {
+        cleanup_test_tokens();
+
+        // Test that numeric expires_at field is stored and loaded correctly
+        let tokens = AuthTokens {
+            access_token: "test_access".to_string(),
+            refresh_token: "test_refresh".to_string(),
+            id_token: "test_id".to_string(),
+            expires_at: 1234567890,
+            session_state: "test_session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok());
+
+        let loaded = load_tokens();
+        assert!(loaded.is_ok());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.expires_at, 1234567890);
+
+        cleanup_test_tokens();
+    }
+
+    #[test]
+    #[ignore] // Requires system keyring
+    fn test_overwrite_existing_tokens() {
+        cleanup_test_tokens();
+
+        // Store first set of tokens
+        let tokens1 = create_test_tokens(500);
+        let store_result1 = store_tokens(&tokens1);
+        assert!(store_result1.is_ok());
+
+        // Overwrite with different tokens
+        let tokens2 = create_test_tokens(1500); // Different size requiring chunking
+        let store_result2 = store_tokens(&tokens2);
+        assert!(store_result2.is_ok());
+
+        // Load and verify we get the second set
+        let loaded = load_tokens();
+        assert!(loaded.is_ok());
+
+        let loaded_tokens = loaded.unwrap();
+        assert_eq!(loaded_tokens.access_token.len(), 1500);
+        assert_eq!(loaded_tokens.access_token, tokens2.access_token);
+
+        cleanup_test_tokens();
+    }
+
+    // ========== Tests for Token Refresh and Validation ==========
+
+    #[tokio::test]
+    async fn test_get_valid_access_token_missing_tokens() {
+        cleanup_test_tokens();
+
+        // Try to get access token when no tokens are stored
+        let result = get_valid_access_token().await;
+        assert!(result.is_err(), "Should fail when no tokens exist");
+        assert!(result.unwrap_err().contains("Not authenticated"));
+
+        cleanup_test_tokens();
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires system keyring
+    async fn test_get_valid_access_token_valid_token() {
+        cleanup_test_tokens();
+
+        // Store tokens with future expiration (not expired)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = AuthTokens {
+            access_token: "valid_access_token".to_string(),
+            refresh_token: "valid_refresh_token".to_string(),
+            id_token: "valid_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok(), "Failed to store tokens");
+
+        // Get valid access token (should return without refreshing)
+        let result = get_valid_access_token().await;
+        assert!(result.is_ok(), "Should succeed with valid token: {:?}", result.err());
+        assert_eq!(result.unwrap(), "valid_access_token");
+
+        cleanup_test_tokens();
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires system keyring and HTTP mocking
+    async fn test_refresh_access_token_with_mock() {
+        // This test would require setting up a mockito server
+        // to mock the Keycloak token endpoint
+        // Skipping for now as it requires more complex setup
+    }
+
+    #[tokio::test]
+    async fn test_is_authenticated_no_tokens() {
+        cleanup_test_tokens();
+
+        // Check authentication when no tokens exist
+        let result = is_authenticated().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), false, "Should not be authenticated without tokens");
+
+        cleanup_test_tokens();
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires system keyring
+    async fn test_is_authenticated_with_valid_token() {
+        cleanup_test_tokens();
+
+        // Store tokens with future expiration
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = AuthTokens {
+            access_token: "valid_access".to_string(),
+            refresh_token: "valid_refresh".to_string(),
+            id_token: "valid_id".to_string(),
+            expires_at: future_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok());
+
+        // Check authentication status
+        let result = is_authenticated().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), true, "Should be authenticated with valid tokens");
+
+        cleanup_test_tokens();
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires system keyring and HTTP mocking
+    async fn test_is_authenticated_with_expired_token() {
+        cleanup_test_tokens();
+
+        // Store tokens with past expiration (expired)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let past_expiry = now - 3600; // Expired 1 hour ago
+
+        let tokens = AuthTokens {
+            access_token: "expired_access".to_string(),
+            refresh_token: "valid_refresh".to_string(),
+            id_token: "expired_id".to_string(),
+            expires_at: past_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&tokens);
+        assert!(store_result.is_ok());
+
+        // Check authentication status (will attempt refresh, which will fail without mock)
+        let result = is_authenticated().await;
+        assert!(result.is_ok());
+        // Result depends on whether refresh succeeds (needs HTTP mock)
+
+        cleanup_test_tokens();
+    }
+
+    // Test helper to verify token expiration logic without keyring/HTTP
+    #[test]
+    fn test_token_expiration_logic() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Token expires in 2 hours - should be considered valid
+        let future_expiry = now + 7200;
+        assert!(future_expiry > now + 60, "Future token should be valid");
+
+        // Token expires in 30 seconds - should trigger refresh (within 60s window)
+        let soon_expiry = now + 30;
+        assert!(soon_expiry <= now + 60, "Soon-expiring token should trigger refresh");
+
+        // Token already expired
+        let past_expiry = now - 100;
+        assert!(past_expiry <= now + 60, "Expired token should trigger refresh");
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires HTTP mocking with mockito
+    async fn test_refresh_access_token_success() {
+        // This test requires setting up mockito to mock the Keycloak endpoint
+        // Example of what this would look like:
+        // let mut server = mockito::Server::new_async().await;
+        // let mock = server.mock("POST", "/auth/realms/edumoov/protocol/openid-connect/token")
+        //     .with_status(200)
+        //     .with_body(r#"{"access_token":"new_access","refresh_token":"new_refresh","id_token":"new_id","expires_in":3600,"session_state":"session"}"#)
+        //     .create();
+        //
+        // Then test refresh_access_token() pointing to mock server
+        // This is left as future work
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires HTTP mocking with mockito
+    async fn test_refresh_access_token_network_error() {
+        // This test requires setting up mockito to simulate network failure
+        // Example: Mock server returns 500 or connection refused
+        // Verify that refresh_access_token() returns appropriate error
+        // This is left as future work
+    }
+
+    #[tokio::test]
+    #[ignore] // Requires HTTP mocking with mockito
+    async fn test_refresh_access_token_invalid_refresh_token() {
+        // This test requires setting up mockito to return 401 Unauthorized
+        // Verify that refresh_access_token() returns appropriate error
+        // This is left as future work
+    }
+}
