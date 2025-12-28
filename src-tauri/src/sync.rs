@@ -230,14 +230,18 @@ fn is_retryable_error(error: &dyn std::error::Error) -> bool {
 }
 
 // Issue #26: Progress tracking with Tauri events
-pub struct SyncEngine {
+pub struct SyncEngine<H: crate::api::HttpClient> {
     app_handle: AppHandle,
-    api_client: EducartableClient,
+    api_client: EducartableClient<H>,
     sync_path: PathBuf,
 }
 
-impl SyncEngine {
-    pub fn new(app_handle: AppHandle, api_client: EducartableClient, sync_path: PathBuf) -> Self {
+impl<H: crate::api::HttpClient> SyncEngine<H> {
+    pub fn new(
+        app_handle: AppHandle,
+        api_client: EducartableClient<H>,
+        sync_path: PathBuf,
+    ) -> Self {
         log::debug!("Creating SyncEngine with sync_path: {:?}", sync_path);
         Self {
             app_handle,
@@ -417,7 +421,7 @@ pub async fn start_sync(
     log::info!("Sync directory: {:?}", config.sync_path);
 
     // Create API client (will fetch and refresh tokens automatically)
-    let api_client = EducartableClient::new();
+    let api_client = EducartableClient::new_default();
 
     // Create sync engine
     let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);

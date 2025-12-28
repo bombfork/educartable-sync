@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Simple HTTP response abstraction
 #[allow(dead_code)]
@@ -70,6 +71,14 @@ impl ReqwestHttpClient {
     pub fn with_client(client: Client) -> Self {
         Self { client }
     }
+
+    /// Create a new ReqwestHttpClient that doesn't follow redirects
+    pub fn new_no_redirect() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        Ok(Self { client })
+    }
 }
 
 #[async_trait]
@@ -110,15 +119,15 @@ impl HttpClient for ReqwestHttpClient {
     }
 }
 
-pub struct EducartableClient {
-    client: Client,
+pub struct EducartableClient<H: HttpClient> {
+    http_client: Arc<H>,
 }
 
-impl EducartableClient {
-    pub fn new() -> Self {
+impl<H: HttpClient> EducartableClient<H> {
+    pub fn new(http_client: H) -> Self {
         log::debug!("Creating new EducartableClient");
         Self {
-            client: Client::new(),
+            http_client: Arc::new(http_client),
         }
     }
 
@@ -135,27 +144,33 @@ impl EducartableClient {
 
         let access_token = self.get_access_token().await?;
 
-        let response = self
-            .client
-            .get(url)
-            .header("Authorization", &access_token) // NO "Bearer"!
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
-            .header("X-Edumoov-NoSession", "true")
-            .send()
-            .await?;
+        let headers = vec![
+            ("Authorization", access_token.as_str()), // NO "Bearer"!
+            ("Accept", "application/json"),
+            ("Content-Type", "application/json"),
+            ("X-Edumoov-NoSession", "true"),
+        ];
 
-        let status = response.status();
-        log::debug!("Response status: {}", status);
+        let response = self.http_client.get(url, headers).await?;
 
-        if !status.is_success() {
+        log::debug!("Response status: {}", response.status);
+
+        if !response.is_success() {
             // Get the error response body for debugging
-            let error_body = response.text().await?;
-            log::error!("Request failed with status {}: {}", status, error_body);
-            return Err(format!("Request failed with status {}: {}", status, error_body).into());
+            let error_body = response.text()?;
+            log::error!(
+                "Request failed with status {}: {}",
+                response.status,
+                error_body
+            );
+            return Err(format!(
+                "Request failed with status {}: {}",
+                response.status, error_body
+            )
+            .into());
         }
 
-        let data: T = response.json().await?;
+        let data: T = response.json()?;
         log::debug!("Response parsed successfully");
         Ok(data)
     }
@@ -169,23 +184,21 @@ impl EducartableClient {
 
         let access_token = self.get_access_token().await?;
 
-        let response = self
-            .client
-            .get(url)
-            .header("Authorization", &access_token)
-            .send()
-            .await?;
+        let headers = vec![("Authorization", access_token.as_str())];
 
-        let status = response.status();
-        log::debug!("User info response status: {}", status);
+        let response = self.http_client.get(url, headers).await?;
 
-        if !status.is_success() {
-            log::error!("User info request failed with status: {}", status);
-            return Err(format!("User info request failed with status: {}", status).into());
+        log::debug!("User info response status: {}", response.status);
+
+        if !response.is_success() {
+            log::error!("User info request failed with status: {}", response.status);
+            return Err(
+                format!("User info request failed with status: {}", response.status).into(),
+            );
         }
 
         // Parse the response wrapper and extract the data field
-        let response_wrapper: UserInfoResponse = response.json().await?;
+        let response_wrapper: UserInfoResponse = response.json()?;
 
         log::info!(
             "User info fetched successfully for user ID: {}",
@@ -247,24 +260,22 @@ impl EducartableClient {
         let access_token = self.get_access_token().await?;
 
         // Disable automatic redirect following to capture the Location header
-        let response = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?
-            .get(&url)
-            .header("Authorization", &access_token)
-            .send()
-            .await?;
+        // Create a temporary no-redirect client for this request
+        let no_redirect_client = ReqwestHttpClient::new_no_redirect()?;
 
-        let status = response.status();
-        log::debug!("Signed URL response status: {}", status);
+        let headers = vec![("Authorization", access_token.as_str())];
+
+        let response = no_redirect_client.get(&url, headers).await?;
+
+        log::debug!("Signed URL response status: {}", response.status);
 
         // Extract Location header from 302 redirect
-        if status.is_redirection() {
+        if response.is_redirection() {
             let location = response
-                .headers()
-                .get("Location")
+                .headers
+                .get("location")
+                .or_else(|| response.headers.get("Location"))
                 .ok_or("No Location header in redirect")?
-                .to_str()?
                 .to_string();
 
             log::debug!("Signed URL obtained for {}", filename);
@@ -273,10 +284,21 @@ impl EducartableClient {
             log::error!(
                 "Expected redirect response for {}, got status: {}",
                 filename,
-                status
+                response.status
             );
-            Err(format!("Expected redirect response, got status: {}", status).into())
+            Err(format!(
+                "Expected redirect response, got status: {}",
+                response.status
+            )
+            .into())
         }
+    }
+}
+
+// Convenience constructor for production code using ReqwestHttpClient
+impl EducartableClient<ReqwestHttpClient> {
+    pub fn new_default() -> Self {
+        Self::new(ReqwestHttpClient::new())
     }
 }
 
@@ -289,7 +311,7 @@ mod tests {
     #[test]
     fn test_educartable_client_new() {
         // Test that client can be constructed
-        let client = EducartableClient::new();
+        let client = EducartableClient::new_default();
         // Verify the client struct exists (compilation test)
         drop(client);
     }
