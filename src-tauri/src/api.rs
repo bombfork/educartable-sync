@@ -259,13 +259,9 @@ impl<H: HttpClient> EducartableClient<H> {
 
         let access_token = self.get_access_token().await?;
 
-        // Disable automatic redirect following to capture the Location header
-        // Create a temporary no-redirect client for this request
-        let no_redirect_client = ReqwestHttpClient::new_no_redirect()?;
-
         let headers = vec![("Authorization", access_token.as_str())];
 
-        let response = no_redirect_client.get(&url, headers).await?;
+        let response = self.http_client.get(&url, headers).await?;
 
         log::debug!("Signed URL response status: {}", response.status);
 
@@ -297,8 +293,13 @@ impl<H: HttpClient> EducartableClient<H> {
 
 // Convenience constructor for production code using ReqwestHttpClient
 impl EducartableClient<ReqwestHttpClient> {
+    #[allow(dead_code)]
     pub fn new_default() -> Self {
         Self::new(ReqwestHttpClient::new())
+    }
+
+    pub fn new_no_redirect() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self::new(ReqwestHttpClient::new_no_redirect()?))
     }
 }
 
@@ -561,83 +562,521 @@ mod tests {
     // These tests require mockito to mock HTTP responses
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_user_info_success() {
-        // This test would require setting up a mockito server
-        // Example implementation:
-        //
-        // let mut server = mockito::Server::new_async().await;
-        // let mock = server.mock("GET", "/api/1.0/educore/users/me")
-        //     .match_header("authorization", "test_token")
-        //     .with_status(200)
-        //     .with_body(r#"{"success":true,"data":{"id":123,"mail":"test@example.com"}}"#)
-        //     .create();
-        //
-        // Then test get_user_info() pointing to mock server
+        // Setup: Store test tokens for auth
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: 9999999999, // Far future timestamp
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Setup: Create mock HTTP client
+        let mock_client = MockHttpClient::new();
+
+        // Mock successful user info response
+        let response_body = r#"{"data":{"id":12345,"mail":"test@example.com","name":"Test User"}}"#;
+        mock_client.add_response(200, response_body);
+
+        // Test: Call get_user_info
+        let client = EducartableClient::new(mock_client);
+        let result = client.get_user_info().await;
+
+        // Verify: Check the result
+        assert!(
+            result.is_ok(),
+            "Expected success, got error: {:?}",
+            result.err()
+        );
+        let user_info = result.unwrap();
+        assert_eq!(user_info.id, 12345);
+        assert_eq!(user_info.email, "test@example.com");
+        assert_eq!(user_info.name, Some("Test User".to_string()));
+
+        // Cleanup
+        let _ = auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_user_info_unauthorized() {
-        // Test 401 unauthorized response
-        // Mock server should return 401 status
-        // Verify that get_user_info() returns appropriate error
+        // Setup: Store test tokens for auth
+        let tokens = crate::models::AuthTokens {
+            access_token: "invalid_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: 9999999999, // Far future timestamp
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Setup: Create mock HTTP client
+        let mock_client = MockHttpClient::new();
+
+        // Mock 401 unauthorized response
+        mock_client.add_response(401, "Unauthorized");
+
+        // Test: Call get_user_info
+        let client = EducartableClient::new(mock_client);
+        let result = client.get_user_info().await;
+
+        // Verify: Check that request failed with appropriate error
+        assert!(result.is_err(), "Expected error for 401 response");
+        let error_message = result.unwrap_err().to_string();
+        assert!(
+            error_message.contains("401") || error_message.contains("failed"),
+            "Error message should mention status 401 or failure: {}",
+            error_message
+        );
+
+        // Cleanup
+        let _ = auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_activities_success() {
-        // Test successful activities response with pagination
-        // Mock server should return ActivitiesResponse with data and pagination
-        // Verify activities are parsed correctly
+        // Setup: Store valid test tokens
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if crate::auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Create mock HTTP client
+        let mock = MockHttpClient::new();
+
+        // Mock successful response with activities
+        let response_body = r#"{
+            "success": true,
+            "data": [
+                {
+                    "id": "act123",
+                    "title": "Test Activity",
+                    "body": "Activity content",
+                    "date": "2024-01-15T10:30:00Z",
+                    "medias": [],
+                    "pupils": [1, 2, 3]
+                }
+            ],
+            "pagination": {
+                "page_count": 1,
+                "current_page": 1,
+                "has_next_page": false,
+                "has_prev_page": false,
+                "count": 1,
+                "limit": 10
+            }
+        }"#;
+        mock.add_response(200, response_body);
+
+        // Create client with mock
+        let client = EducartableClient::new(mock);
+
+        // Test
+        let result = client.get_activities(12345).await;
+        assert!(result.is_ok(), "get_activities should succeed");
+
+        let response = result.unwrap();
+        assert_eq!(response.success, true);
+        assert_eq!(response.data.len(), 1);
+        assert_eq!(response.data[0].id, "act123");
+        assert_eq!(response.data[0].title, "Test Activity");
+        assert_eq!(response.data[0].pupils, vec![1, 2, 3]);
+        assert_eq!(response.pagination.page_count, 1);
+
+        // Cleanup
+        let _ = crate::auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_activities_empty() {
-        // Test response with no activities
-        // Mock server should return empty data array
-        // Verify empty vec is returned
+        // Setup: Store valid test tokens
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if crate::auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Create mock HTTP client
+        let mock = MockHttpClient::new();
+
+        // Mock successful response with empty activities
+        let response_body = r#"{
+            "success": true,
+            "data": [],
+            "pagination": {
+                "page_count": 0,
+                "current_page": 1,
+                "has_next_page": false,
+                "has_prev_page": false,
+                "count": 0,
+                "limit": 10
+            }
+        }"#;
+        mock.add_response(200, response_body);
+
+        // Create client with mock
+        let client = EducartableClient::new(mock);
+
+        // Test
+        let result = client.get_activities(12345).await;
+        assert!(
+            result.is_ok(),
+            "get_activities should succeed even with no data"
+        );
+
+        let response = result.unwrap();
+        assert_eq!(response.success, true);
+        assert_eq!(response.data.len(), 0);
+        assert_eq!(response.pagination.count, 0);
+
+        // Cleanup
+        let _ = crate::auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_activities_server_error() {
-        // Test 500 server error response
-        // Mock server should return 500 status
-        // Verify error is propagated correctly
+        // Setup: Store valid test tokens
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if crate::auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Create mock HTTP client
+        let mock = MockHttpClient::new();
+
+        // Mock 500 server error response
+        let response_body = r#"{"error": "Internal server error"}"#;
+        mock.add_response(500, response_body);
+
+        // Create client with mock
+        let client = EducartableClient::new(mock);
+
+        // Test
+        let result = client.get_activities(12345).await;
+        assert!(result.is_err(), "get_activities should fail with 500 error");
+
+        let error = result.unwrap_err();
+        let error_msg = error.to_string();
+        assert!(
+            error_msg.contains("500"),
+            "Error should mention status code 500, got: {}",
+            error_msg
+        );
+
+        // Cleanup
+        let _ = crate::auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_redirect() {
-        // Test successful redirect with Location header
-        // Mock server should return 302 with Location header
-        // Verify signed URL is extracted from Location header
+        // Setup test tokens
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: 9999999999,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Setup mock with 302 redirect and Location header
+        let mock = MockHttpClient::new();
+        let mut headers = HashMap::new();
+        headers.insert(
+            "location".to_string(),
+            "https://signed-url.com/media.jpg".to_string(),
+        );
+        mock.add_response_with_headers(302, headers, "");
+
+        // Test
+        let client = EducartableClient::new(mock);
+        let result = client.get_signed_media_url("media123", "photo.jpg").await;
+
+        // Verify
+        assert!(
+            result.is_ok(),
+            "Expected success, got error: {:?}",
+            result.err()
+        );
+        let signed_url = result.unwrap();
+        assert_eq!(signed_url, "https://signed-url.com/media.jpg");
+
+        // Cleanup
+        let _ = auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_no_location_header() {
-        // Test redirect without Location header
-        // Mock server should return 302 without Location header
-        // Verify appropriate error is returned
+        // Setup test tokens
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: 9999999999,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Setup mock with 302 redirect but NO Location header
+        let mock = MockHttpClient::new();
+        let headers = HashMap::new(); // No Location header
+        mock.add_response_with_headers(302, headers, "");
+
+        // Test
+        let client = EducartableClient::new(mock);
+        let result = client.get_signed_media_url("media123", "photo.jpg").await;
+
+        // Verify
+        assert!(
+            result.is_err(),
+            "Expected error for missing Location header"
+        );
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("No Location header"),
+            "Error message should mention missing Location header, got: {}",
+            error_msg
+        );
+
+        // Cleanup
+        let _ = auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_not_redirect() {
-        // Test non-redirect response (e.g., 200 OK)
-        // Mock server should return 200 instead of 302
-        // Verify error is returned (expects redirect)
+        // Setup test tokens
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: 9999999999,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Setup mock with 200 response (not a redirect)
+        let mock = MockHttpClient::new();
+        mock.add_response(200, "OK");
+
+        // Test
+        let client = EducartableClient::new(mock);
+        let result = client.get_signed_media_url("media123", "photo.jpg").await;
+
+        // Verify
+        assert!(result.is_err(), "Expected error for non-redirect response");
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("Expected redirect response"),
+            "Error message should mention expected redirect, got: {}",
+            error_msg
+        );
+
+        // Cleanup
+        let _ = auth::delete_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
+    #[ignore] // Requires system keyring access
     async fn test_fetch_all_activities_integration() {
-        // Test full fetch_all_activities flow
-        // Mock multiple pages of activities
-        // Verify all activities are collected
+        // Setup: Store valid test tokens
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = crate::models::AuthTokens {
+            access_token: "test_access_token".to_string(),
+            refresh_token: "test_refresh_token".to_string(),
+            id_token: "test_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "test_session".to_string(),
+        };
+
+        // Store tokens - if this fails, skip the test
+        if crate::auth::store_tokens(&tokens).is_err() {
+            eprintln!("Skipping test: unable to access system keyring");
+            return;
+        }
+
+        // Create mock HTTP client
+        let mock = MockHttpClient::new();
+
+        // Mock response with multiple activities
+        let response_body = r#"{
+            "success": true,
+            "data": [
+                {
+                    "id": "act1",
+                    "title": "Activity 1",
+                    "body": "Content 1",
+                    "date": "2024-01-15T10:00:00Z",
+                    "medias": [
+                        {
+                            "id": "media1",
+                            "name": "photo1",
+                            "extension": ".jpg",
+                            "size": 1024,
+                            "type": "image"
+                        }
+                    ],
+                    "pupils": [1]
+                },
+                {
+                    "id": "act2",
+                    "title": "Activity 2",
+                    "body": "Content 2",
+                    "date": "2024-01-16T10:00:00Z",
+                    "medias": [],
+                    "pupils": [2]
+                },
+                {
+                    "id": "act3",
+                    "title": "Activity 3",
+                    "body": "Content 3",
+                    "date": "2024-01-17T10:00:00Z",
+                    "medias": [
+                        {
+                            "id": "media2",
+                            "name": "photo2",
+                            "extension": ".png",
+                            "size": 2048,
+                            "type": "image"
+                        },
+                        {
+                            "id": "media3",
+                            "name": "photo3",
+                            "extension": ".jpg",
+                            "size": 3072,
+                            "type": "image"
+                        }
+                    ],
+                    "pupils": [1, 2, 3]
+                }
+            ],
+            "pagination": {
+                "page_count": 1,
+                "current_page": 1,
+                "has_next_page": false,
+                "has_prev_page": false,
+                "count": 3,
+                "limit": 10
+            }
+        }"#;
+        mock.add_response(200, response_body);
+
+        // Create client with mock
+        let client = EducartableClient::new(mock);
+
+        // Test fetch_all_activities
+        let result = client.fetch_all_activities(12345).await;
+        assert!(
+            result.is_ok(),
+            "fetch_all_activities should succeed: {:?}",
+            result.err()
+        );
+
+        let activities = result.unwrap();
+        assert_eq!(activities.len(), 3, "Should have 3 activities");
+
+        // Verify first activity
+        assert_eq!(activities[0].id, "act1");
+        assert_eq!(activities[0].title, "Activity 1");
+        assert_eq!(activities[0].medias.len(), 1);
+        assert_eq!(activities[0].medias[0].name, "photo1");
+
+        // Verify second activity
+        assert_eq!(activities[1].id, "act2");
+        assert_eq!(activities[1].title, "Activity 2");
+        assert_eq!(activities[1].medias.len(), 0);
+
+        // Verify third activity
+        assert_eq!(activities[2].id, "act3");
+        assert_eq!(activities[2].title, "Activity 3");
+        assert_eq!(activities[2].medias.len(), 2);
+        assert_eq!(activities[2].medias[1].name, "photo3");
+        assert_eq!(activities[2].pupils, vec![1, 2, 3]);
+
+        // Cleanup
+        let _ = crate::auth::delete_tokens();
     }
 
     // ========== Request Header Tests ==========

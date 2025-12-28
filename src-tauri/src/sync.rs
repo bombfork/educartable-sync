@@ -420,8 +420,9 @@ pub async fn start_sync(
 
     log::info!("Sync directory: {:?}", config.sync_path);
 
-    // Create API client (will fetch and refresh tokens automatically)
-    let api_client = EducartableClient::new_default();
+    // Create API client with no-redirect policy for signed URL retrieval
+    let api_client = EducartableClient::new_no_redirect()
+        .map_err(|e| format!("Failed to create API client: {}", e))?;
 
     // Create sync engine
     let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
