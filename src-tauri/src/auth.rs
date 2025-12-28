@@ -623,7 +623,10 @@ pub async fn logout() -> Result<(), String> {
 
 /// Refresh access token using the refresh token
 /// Returns new AuthTokens with updated access_token, refresh_token, and expires_at
-pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, String> {
+pub async fn refresh_access_token(
+    store: &dyn CredentialStore,
+    refresh_token: &str,
+) -> Result<AuthTokens, String> {
     log::info!("Attempting to refresh access token");
 
     let client = reqwest::Client::new();
@@ -692,7 +695,7 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, Str
     };
 
     // Store the new tokens
-    store_tokens_default(&tokens)?;
+    store_tokens(store, &tokens)?;
 
     log::info!(
         "Access token refreshed successfully, expires at {}",
@@ -701,12 +704,20 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, Str
     Ok(tokens)
 }
 
+/// Refresh access token using the refresh token with the default KeyringCredentialStore
+/// Returns new AuthTokens with updated access_token, refresh_token, and expires_at
+#[allow(dead_code)]
+pub async fn refresh_access_token_default(refresh_token: &str) -> Result<AuthTokens, String> {
+    let store = KeyringCredentialStore::new();
+    refresh_access_token(&store, refresh_token).await
+}
+
 /// Get valid access token, refreshing if necessary
 /// This function should be used by API client to ensure tokens are always valid
-pub async fn get_valid_access_token() -> Result<String, String> {
+pub async fn get_valid_access_token(store: &dyn CredentialStore) -> Result<String, String> {
     log::debug!("Getting valid access token");
 
-    let tokens = load_tokens_default().map_err(|_| {
+    let tokens = load_tokens(store).map_err(|_| {
         log::debug!("No tokens found in storage");
         "Not authenticated. Please log in first.".to_string()
     })?;
@@ -719,7 +730,7 @@ pub async fn get_valid_access_token() -> Result<String, String> {
     // Check if access token is expired or will expire in the next 60 seconds
     if tokens.expires_at <= now + 60 {
         log::info!("Access token expired or expiring soon, attempting refresh");
-        let new_tokens = refresh_access_token(&tokens.refresh_token).await?;
+        let new_tokens = refresh_access_token(store, &tokens.refresh_token).await?;
         Ok(new_tokens.access_token)
     } else {
         log::debug!("Access token is still valid");
@@ -727,11 +738,18 @@ pub async fn get_valid_access_token() -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-pub async fn is_authenticated() -> Result<bool, String> {
+/// Get valid access token with the default KeyringCredentialStore
+#[allow(dead_code)]
+pub async fn get_valid_access_token_default() -> Result<String, String> {
+    let store = KeyringCredentialStore::new();
+    get_valid_access_token(&store).await
+}
+
+/// Check if the user is authenticated (has valid tokens that can be refreshed)
+pub async fn is_authenticated_with_store(store: &dyn CredentialStore) -> Result<bool, String> {
     log::debug!("Checking authentication status");
 
-    match load_tokens_default() {
+    match load_tokens(store) {
         Ok(tokens) => {
             // Check if token is expired
             let now = SystemTime::now()
@@ -749,7 +767,7 @@ pub async fn is_authenticated() -> Result<bool, String> {
             } else {
                 // Access token expired, try to refresh
                 log::debug!("Access token expired, attempting refresh to verify authentication");
-                match refresh_access_token(&tokens.refresh_token).await {
+                match refresh_access_token(store, &tokens.refresh_token).await {
                     Ok(_) => {
                         log::debug!("Authentication status: valid (token refreshed successfully)");
                         Ok(true)
@@ -766,6 +784,12 @@ pub async fn is_authenticated() -> Result<bool, String> {
             Ok(false)
         }
     }
+}
+
+#[tauri::command]
+pub async fn is_authenticated() -> Result<bool, String> {
+    let store = KeyringCredentialStore::new();
+    is_authenticated_with_store(&store).await
 }
 
 #[cfg(test)]
@@ -1194,20 +1218,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_valid_access_token_missing_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Try to get access token when no tokens are stored
-        let result = get_valid_access_token().await;
+        let result = get_valid_access_token(&store).await;
         assert!(result.is_err(), "Should fail when no tokens exist");
         assert!(result.unwrap_err().contains("Not authenticated"));
-
-        cleanup_test_tokens();
     }
 
     #[tokio::test]
-    #[ignore] // Note: This test requires system keyring as get_valid_access_token() uses load_tokens_default()
     async fn test_get_valid_access_token_valid_token() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Store tokens with future expiration (not expired)
         let now = SystemTime::now()
@@ -1224,19 +1245,167 @@ mod tests {
             session_state: "session".to_string(),
         };
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(store_result.is_ok(), "Failed to store tokens");
 
         // Get valid access token (should return without refreshing)
-        let result = get_valid_access_token().await;
+        let result = get_valid_access_token(&store).await;
         assert!(
             result.is_ok(),
             "Should succeed with valid token: {:?}",
             result.err()
         );
         assert_eq!(result.unwrap(), "valid_access_token");
+    }
 
-        cleanup_test_tokens();
+    // ========== Tests demonstrating testability improvements with MockCredentialStore ==========
+
+    #[tokio::test]
+    async fn test_is_authenticated_with_store_no_tokens() {
+        let store = MockCredentialStore::new();
+
+        // Check authentication when no tokens exist
+        let result = is_authenticated_with_store(&store).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            false,
+            "Should not be authenticated without tokens"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_is_authenticated_with_store_valid_token() {
+        let store = MockCredentialStore::new();
+
+        // Store tokens with future expiration
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = AuthTokens {
+            access_token: "valid_access".to_string(),
+            refresh_token: "valid_refresh".to_string(),
+            id_token: "valid_id".to_string(),
+            expires_at: future_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&store, &tokens);
+        assert!(store_result.is_ok());
+
+        // Check authentication status
+        let result = is_authenticated_with_store(&store).await;
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            true,
+            "Should be authenticated with valid tokens"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_valid_access_token_with_store_missing_tokens() {
+        let store = MockCredentialStore::new();
+
+        // Try to get access token when no tokens are stored
+        let result = get_valid_access_token(&store).await;
+        assert!(result.is_err(), "Should fail when no tokens exist");
+        assert!(result.unwrap_err().contains("Not authenticated"));
+    }
+
+    #[tokio::test]
+    async fn test_get_valid_access_token_with_store_valid_token() {
+        let store = MockCredentialStore::new();
+
+        // Store tokens with future expiration (not expired)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let future_expiry = now + 3600; // Expires in 1 hour
+
+        let tokens = AuthTokens {
+            access_token: "test_valid_access_token".to_string(),
+            refresh_token: "test_valid_refresh_token".to_string(),
+            id_token: "test_valid_id_token".to_string(),
+            expires_at: future_expiry,
+            session_state: "test_session".to_string(),
+        };
+
+        let store_result = store_tokens(&store, &tokens);
+        assert!(store_result.is_ok(), "Failed to store tokens");
+
+        // Get valid access token (should return without refreshing)
+        let result = get_valid_access_token(&store).await;
+        assert!(
+            result.is_ok(),
+            "Should succeed with valid token: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap(), "test_valid_access_token");
+    }
+
+    #[tokio::test]
+    async fn test_get_valid_access_token_with_store_expired_token() {
+        let store = MockCredentialStore::new();
+
+        // Store tokens with past expiration (expired)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let past_expiry = now - 3600; // Expired 1 hour ago
+
+        let tokens = AuthTokens {
+            access_token: "expired_access".to_string(),
+            refresh_token: "valid_refresh".to_string(),
+            id_token: "expired_id".to_string(),
+            expires_at: past_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&store, &tokens);
+        assert!(store_result.is_ok());
+
+        // Try to get valid access token (will attempt refresh, which will fail without HTTP mock)
+        let result = get_valid_access_token(&store).await;
+        assert!(
+            result.is_err(),
+            "Should fail to refresh token without valid HTTP endpoint"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_valid_access_token_with_store_expiring_soon() {
+        let store = MockCredentialStore::new();
+
+        // Store tokens that expire in 30 seconds (within the 60s refresh window)
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let soon_expiry = now + 30; // Expires in 30 seconds
+
+        let tokens = AuthTokens {
+            access_token: "expiring_soon_access".to_string(),
+            refresh_token: "valid_refresh".to_string(),
+            id_token: "expiring_soon_id".to_string(),
+            expires_at: soon_expiry,
+            session_state: "session".to_string(),
+        };
+
+        let store_result = store_tokens(&store, &tokens);
+        assert!(store_result.is_ok());
+
+        // Try to get valid access token (should trigger refresh due to 60s window)
+        let result = get_valid_access_token(&store).await;
+        assert!(
+            result.is_err(),
+            "Should attempt refresh for token expiring soon"
+        );
     }
 
     #[tokio::test]
