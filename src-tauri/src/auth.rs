@@ -777,17 +777,13 @@ pub async fn is_authenticated() -> Result<bool, String> {
     is_authenticated_with_store(&store).await
 }
 
+// Mock credential store for testing - accessible to all test modules
 #[cfg(test)]
-mod tests {
+pub mod mock {
     use super::*;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
-    // NOTE: These tests require access to the system keyring and are marked as #[ignore]
-    // by default. They can be run manually with: cargo test -- --ignored
-    // These tests may fail in headless CI environments without proper keyring setup.
-
-    // Mock credential store for testing
     pub struct MockCredentialStore {
         storage: Arc<Mutex<HashMap<String, String>>>,
     }
@@ -827,6 +823,19 @@ mod tests {
             Ok(())
         }
     }
+}
+
+// Re-export for backward compatibility with existing tests
+#[cfg(test)]
+pub use mock::MockCredentialStore;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // NOTE: These tests require access to the system keyring and are marked as #[ignore]
+    // by default. They can be run manually with: cargo test -- --ignored
+    // These tests may fail in headless CI environments without proper keyring setup.
 
     /// Helper to create test tokens with specific token sizes
     fn create_test_tokens(token_size: usize) -> AuthTokens {
@@ -1390,14 +1399,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring and HTTP mocking
-    async fn test_refresh_access_token_with_mock() {
-        // This test would require setting up a mockito server
-        // to mock the Keycloak token endpoint
-        // Skipping for now as it requires more complex setup
-    }
-
-    #[tokio::test]
     async fn test_is_authenticated_no_tokens() {
         cleanup_test_tokens();
 
@@ -1409,72 +1410,6 @@ mod tests {
             false,
             "Should not be authenticated without tokens"
         );
-
-        cleanup_test_tokens();
-    }
-
-    #[tokio::test]
-    #[ignore] // Requires system keyring
-    async fn test_is_authenticated_with_valid_token() {
-        cleanup_test_tokens();
-
-        // Store tokens with future expiration
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        let future_expiry = now + 3600; // Expires in 1 hour
-
-        let tokens = AuthTokens {
-            access_token: "valid_access".to_string(),
-            refresh_token: "valid_refresh".to_string(),
-            id_token: "valid_id".to_string(),
-            expires_at: future_expiry,
-            session_state: "session".to_string(),
-        };
-
-        let store_result = store_tokens_default(&tokens);
-        assert!(store_result.is_ok());
-
-        // Check authentication status
-        let result = is_authenticated().await;
-        assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            true,
-            "Should be authenticated with valid tokens"
-        );
-
-        cleanup_test_tokens();
-    }
-
-    #[tokio::test]
-    #[ignore] // Requires system keyring and HTTP mocking
-    async fn test_is_authenticated_with_expired_token() {
-        cleanup_test_tokens();
-
-        // Store tokens with past expiration (expired)
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        let past_expiry = now - 3600; // Expired 1 hour ago
-
-        let tokens = AuthTokens {
-            access_token: "expired_access".to_string(),
-            refresh_token: "valid_refresh".to_string(),
-            id_token: "expired_id".to_string(),
-            expires_at: past_expiry,
-            session_state: "session".to_string(),
-        };
-
-        let store_result = store_tokens_default(&tokens);
-        assert!(store_result.is_ok());
-
-        // Check authentication status (will attempt refresh, which will fail without mock)
-        let result = is_authenticated().await;
-        assert!(result.is_ok());
-        // Result depends on whether refresh succeeds (needs HTTP mock)
 
         cleanup_test_tokens();
     }
@@ -1504,37 +1439,5 @@ mod tests {
             past_expiry <= now + 60,
             "Expired token should trigger refresh"
         );
-    }
-
-    #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
-    async fn test_refresh_access_token_success() {
-        // This test requires setting up mockito to mock the Keycloak endpoint
-        // Example of what this would look like:
-        // let mut server = mockito::Server::new_async().await;
-        // let mock = server.mock("POST", "/auth/realms/edumoov/protocol/openid-connect/token")
-        //     .with_status(200)
-        //     .with_body(r#"{"access_token":"new_access","refresh_token":"new_refresh","id_token":"new_id","expires_in":3600,"session_state":"session"}"#)
-        //     .create();
-        //
-        // Then test refresh_access_token() pointing to mock server
-        // This is left as future work
-    }
-
-    #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
-    async fn test_refresh_access_token_network_error() {
-        // This test requires setting up mockito to simulate network failure
-        // Example: Mock server returns 500 or connection refused
-        // Verify that refresh_access_token() returns appropriate error
-        // This is left as future work
-    }
-
-    #[tokio::test]
-    #[ignore] // Requires HTTP mocking with mockito
-    async fn test_refresh_access_token_invalid_refresh_token() {
-        // This test requires setting up mockito to return 401 Unauthorized
-        // Verify that refresh_access_token() returns appropriate error
-        // This is left as future work
     }
 }

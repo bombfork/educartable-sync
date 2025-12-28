@@ -571,7 +571,6 @@ mod tests {
     // These tests require mockito to mock HTTP responses
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_user_info_success() {
         // Setup: Store test tokens for auth
         let tokens = crate::models::AuthTokens {
@@ -582,11 +581,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Setup: Create mock HTTP client
         let mock_client = MockHttpClient::new();
@@ -596,8 +593,7 @@ mod tests {
         mock_client.add_response(200, response_body);
 
         // Test: Call get_user_info
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock_client, credential_store);
+        let client = EducartableClient::new(mock_client, credential_store.clone());
         let result = client.get_user_info().await;
 
         // Verify: Check the result
@@ -612,11 +608,10 @@ mod tests {
         assert_eq!(user_info.name, Some("Test User".to_string()));
 
         // Cleanup
-        let _ = auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_user_info_unauthorized() {
         // Setup: Store test tokens for auth
         let tokens = crate::models::AuthTokens {
@@ -627,11 +622,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Setup: Create mock HTTP client
         let mock_client = MockHttpClient::new();
@@ -640,8 +633,7 @@ mod tests {
         mock_client.add_response(401, "Unauthorized");
 
         // Test: Call get_user_info
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock_client, credential_store);
+        let client = EducartableClient::new(mock_client, credential_store.clone());
         let result = client.get_user_info().await;
 
         // Verify: Check that request failed with appropriate error
@@ -654,11 +646,10 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_activities_success() {
         // Setup: Store valid test tokens
         let now = std::time::SystemTime::now()
@@ -675,11 +666,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Create mock HTTP client
         let mock = MockHttpClient::new();
@@ -709,8 +698,7 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
 
         // Test
         let result = client.get_activities(12345).await;
@@ -725,11 +713,10 @@ mod tests {
         assert_eq!(response.pagination.page_count, 1);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_activities_empty() {
         // Setup: Store valid test tokens
         let now = std::time::SystemTime::now()
@@ -746,11 +733,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Create mock HTTP client
         let mock = MockHttpClient::new();
@@ -771,8 +756,7 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
 
         // Test
         let result = client.get_activities(12345).await;
@@ -787,11 +771,10 @@ mod tests {
         assert_eq!(response.pagination.count, 0);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_activities_server_error() {
         // Setup: Store valid test tokens
         let now = std::time::SystemTime::now()
@@ -808,11 +791,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Create mock HTTP client
         let mock = MockHttpClient::new();
@@ -822,8 +803,7 @@ mod tests {
         mock.add_response(500, response_body);
 
         // Create client with mock
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
 
         // Test
         let result = client.get_activities(12345).await;
@@ -838,11 +818,10 @@ mod tests {
         );
 
         // Cleanup
-        let _ = crate::auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_redirect() {
         // Setup test tokens
         let tokens = crate::models::AuthTokens {
@@ -853,11 +832,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Setup mock with 302 redirect and Location header
         let mock = MockHttpClient::new();
@@ -869,8 +846,7 @@ mod tests {
         mock.add_response_with_headers(302, headers, "");
 
         // Test
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -883,11 +859,10 @@ mod tests {
         assert_eq!(signed_url, "https://signed-url.com/media.jpg");
 
         // Cleanup
-        let _ = auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_no_location_header() {
         // Setup test tokens
         let tokens = crate::models::AuthTokens {
@@ -898,11 +873,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Setup mock with 302 redirect but NO Location header
         let mock = MockHttpClient::new();
@@ -910,8 +883,7 @@ mod tests {
         mock.add_response_with_headers(302, headers, "");
 
         // Test
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -927,11 +899,10 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_get_signed_media_url_not_redirect() {
         // Setup test tokens
         let tokens = crate::models::AuthTokens {
@@ -942,19 +913,16 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Setup mock with 200 response (not a redirect)
         let mock = MockHttpClient::new();
         mock.add_response(200, "OK");
 
         // Test
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -967,11 +935,10 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring access
     async fn test_fetch_all_activities_integration() {
         // Setup: Store valid test tokens
         let now = std::time::SystemTime::now()
@@ -988,11 +955,9 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens_default(&tokens).is_err() {
-            eprintln!("Skipping test: unable to access system keyring");
-            return;
-        }
+        let credential_store = Arc::new(crate::auth::MockCredentialStore::new());
+        crate::auth::store_tokens(credential_store.as_ref(), &tokens)
+            .expect("Failed to store tokens");
 
         // Create mock HTTP client
         let mock = MockHttpClient::new();
@@ -1061,8 +1026,7 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
-        let client = EducartableClient::new(mock, credential_store);
+        let client = EducartableClient::new(mock, credential_store.clone());
 
         // Test fetch_all_activities
         let result = client.fetch_all_activities(12345).await;
@@ -1094,7 +1058,7 @@ mod tests {
         assert_eq!(activities[2].pupils, vec![1, 2, 3]);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens_default();
+        let _ = crate::auth::delete_tokens(credential_store.as_ref());
     }
 
     // ========== Request Header Tests ==========
