@@ -1,8 +1,8 @@
 // API client for Educartable endpoints
+use crate::auth;
+use crate::models::{ActivitiesResponse, Activity, UserInfo, UserInfoResponse};
 use reqwest::Client;
 use serde::Deserialize;
-use crate::models::{UserInfo, UserInfoResponse, ActivitiesResponse, Activity};
-use crate::auth;
 
 pub struct EducartableClient {
     client: Client,
@@ -18,22 +18,21 @@ impl EducartableClient {
 
     /// Get a valid access token, automatically refreshing if needed
     async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        auth::get_valid_access_token()
-            .await
-            .map_err(|e| e.into())
+        auth::get_valid_access_token().await.map_err(|e| e.into())
     }
 
     async fn get<T: for<'de> Deserialize<'de>>(
         &self,
-        url: &str
+        url: &str,
     ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("GET request: {}", url);
 
         let access_token = self.get_access_token().await?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(url)
-            .header("Authorization", &access_token)  // NO "Bearer"!
+            .header("Authorization", &access_token) // NO "Bearer"!
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .header("X-Edumoov-NoSession", "true")
@@ -56,13 +55,16 @@ impl EducartableClient {
     }
 
     // Issue #20: User info endpoint
-    pub async fn get_user_info(&self) -> Result<UserInfo, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_user_info(
+        &self,
+    ) -> Result<UserInfo, Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Fetching user info");
         let url = "https://app.educartable.com/api/1.0/educore/users/me?light=1";
 
         let access_token = self.get_access_token().await?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .header("Authorization", &access_token)
             .send()
@@ -79,7 +81,10 @@ impl EducartableClient {
         // Parse the response wrapper and extract the data field
         let response_wrapper: UserInfoResponse = response.json().await?;
 
-        log::info!("User info fetched successfully for user ID: {}", response_wrapper.data.id);
+        log::info!(
+            "User info fetched successfully for user ID: {}",
+            response_wrapper.data.id
+        );
         Ok(response_wrapper.data)
     }
 
@@ -110,7 +115,7 @@ impl EducartableClient {
 
     pub async fn fetch_all_activities(
         &self,
-        parent_id: i64
+        parent_id: i64,
     ) -> Result<Vec<Activity>, Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Fetching all activities for parent {}", parent_id);
 
@@ -125,7 +130,7 @@ impl EducartableClient {
     pub async fn get_signed_media_url(
         &self,
         media_id: &str,
-        filename: &str
+        filename: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         log::debug!("Getting signed URL for media: {} ({})", media_id, filename);
         let url = format!(
@@ -149,7 +154,8 @@ impl EducartableClient {
 
         // Extract Location header from 302 redirect
         if status.is_redirection() {
-            let location = response.headers()
+            let location = response
+                .headers()
                 .get("Location")
                 .ok_or("No Location header in redirect")?
                 .to_str()?
@@ -158,7 +164,11 @@ impl EducartableClient {
             log::debug!("Signed URL obtained for {}", filename);
             Ok(location)
         } else {
-            log::error!("Expected redirect response for {}, got status: {}", filename, status);
+            log::error!(
+                "Expected redirect response for {}, got status: {}",
+                filename,
+                status
+            );
             Err(format!("Expected redirect response, got status: {}", status).into())
         }
     }

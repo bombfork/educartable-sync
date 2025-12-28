@@ -1,11 +1,11 @@
 // Authentication module - OAuth via webview
 
-use tauri::{AppHandle, WebviewWindowBuilder, WebviewUrl, Wry};
-use tauri::webview::PageLoadEvent;
-use std::sync::{Mutex, mpsc};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::models::AuthTokens;
 use keyring::Entry;
+use std::sync::{mpsc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tauri::webview::PageLoadEvent;
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder, Wry};
 
 // Global state to store tokens during extraction
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
@@ -44,33 +44,41 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
     log::info!(
         "Storing token field '{}' (length: {} chars, {} bytes)",
-        field_name, value_chars, value_bytes
+        field_name,
+        value_chars,
+        value_bytes
     );
 
     if value_bytes <= SAFE_CHUNK_SIZE_BYTES {
         // Field fits in single entry, store directly
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
-        let entry = Entry::new(SERVICE_NAME, &username)
-            .map_err(|e| {
-                log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
-                format!("Cannot access system keyring for '{}'. Please check your system permissions.", field_name)
-            })?;
+        let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+            log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+            format!(
+                "Cannot access system keyring for '{}'. Please check your system permissions.",
+                field_name
+            )
+        })?;
 
-        entry.set_password(value)
-            .map_err(|e| {
-                log::error!(
-                    "Failed to store '{}' ({} chars, {} bytes) in keyring: {}",
-                    field_name, value_chars, value_bytes, e
-                );
-                format!(
-                    "Cannot save '{}' credential ({} chars, {} bytes). Error: {}",
-                    field_name, value_chars, value_bytes, e
-                )
-            })?;
+        entry.set_password(value).map_err(|e| {
+            log::error!(
+                "Failed to store '{}' ({} chars, {} bytes) in keyring: {}",
+                field_name,
+                value_chars,
+                value_bytes,
+                e
+            );
+            format!(
+                "Cannot save '{}' credential ({} chars, {} bytes). Error: {}",
+                field_name, value_chars, value_bytes, e
+            )
+        })?;
 
         log::debug!(
             "Token field '{}' stored successfully ({} chars, {} bytes, single entry)",
-            field_name, value_chars, value_bytes
+            field_name,
+            value_chars,
+            value_bytes
         );
     } else {
         // Field needs to be chunked based on byte size
@@ -114,21 +122,31 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 
         // Store metadata entry with chunk count (with prefix to avoid confusion with numeric data)
         let username = format!("{}.{}", USERNAME_PREFIX, field_name);
-        let entry = Entry::new(SERVICE_NAME, &username)
-            .map_err(|e| {
-                log::error!("Keyring metadata entry creation failed for '{}': {}", field_name, e);
-                format!("Cannot access system keyring for '{}'.", field_name)
-            })?;
+        let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+            log::error!(
+                "Keyring metadata entry creation failed for '{}': {}",
+                field_name,
+                e
+            );
+            format!("Cannot access system keyring for '{}'.", field_name)
+        })?;
 
         // Use "CHUNKS:" prefix to distinguish metadata from numeric data (e.g., timestamps)
         let metadata = format!("CHUNKS:{}", chunk_count);
-        entry.set_password(&metadata)
-            .map_err(|e| {
-                log::error!("Failed to store '{}' metadata in keyring: {}", field_name, e);
-                format!("Cannot save '{}' metadata.", field_name)
-            })?;
+        entry.set_password(&metadata).map_err(|e| {
+            log::error!(
+                "Failed to store '{}' metadata in keyring: {}",
+                field_name,
+                e
+            );
+            format!("Cannot save '{}' metadata.", field_name)
+        })?;
 
-        log::debug!("Token field '{}' metadata stored: {} chunks", field_name, chunk_count);
+        log::debug!(
+            "Token field '{}' metadata stored: {} chunks",
+            field_name,
+            chunk_count
+        );
 
         // Store each chunk
         for (index, chunk) in chunks.iter().enumerate() {
@@ -137,33 +155,50 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
             let chunk_chars = chunk.chars().count();
 
             let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
-            let entry = Entry::new(SERVICE_NAME, &username)
-                .map_err(|e| {
-                    log::error!("Keyring entry creation failed for '{}' chunk {}: {}", field_name, chunk_index, e);
-                    format!("Cannot access system keyring for '{}' chunk {}.", field_name, chunk_index)
-                })?;
+            let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+                log::error!(
+                    "Keyring entry creation failed for '{}' chunk {}: {}",
+                    field_name,
+                    chunk_index,
+                    e
+                );
+                format!(
+                    "Cannot access system keyring for '{}' chunk {}.",
+                    field_name, chunk_index
+                )
+            })?;
 
-            entry.set_password(chunk)
-                .map_err(|e| {
-                    log::error!(
-                        "Failed to store '{}' chunk {} ({} chars, {} bytes) in keyring: {}",
-                        field_name, chunk_index, chunk_chars, chunk_bytes, e
-                    );
-                    format!(
-                        "Cannot save '{}' chunk {} ({} chars, {} bytes). Error: {}",
-                        field_name, chunk_index, chunk_chars, chunk_bytes, e
-                    )
-                })?;
+            entry.set_password(chunk).map_err(|e| {
+                log::error!(
+                    "Failed to store '{}' chunk {} ({} chars, {} bytes) in keyring: {}",
+                    field_name,
+                    chunk_index,
+                    chunk_chars,
+                    chunk_bytes,
+                    e
+                );
+                format!(
+                    "Cannot save '{}' chunk {} ({} chars, {} bytes). Error: {}",
+                    field_name, chunk_index, chunk_chars, chunk_bytes, e
+                )
+            })?;
 
             log::debug!(
                 "Token field '{}' chunk {}/{} stored successfully ({} chars, {} bytes)",
-                field_name, chunk_index, chunk_count, chunk_chars, chunk_bytes
+                field_name,
+                chunk_index,
+                chunk_count,
+                chunk_chars,
+                chunk_bytes
             );
         }
 
         log::info!(
             "Token field '{}' stored successfully ({} chars, {} bytes in {} chunks)",
-            field_name, value_chars, value_bytes, chunk_count
+            field_name,
+            value_chars,
+            value_bytes,
+            chunk_count
         );
     }
 
@@ -173,58 +208,89 @@ fn store_token_field(field_name: &str, value: &str) -> Result<(), String> {
 /// Load a token field from keyring, reassembling chunks if necessary
 fn load_token_field(field_name: &str) -> Result<String, String> {
     let username = format!("{}.{}", USERNAME_PREFIX, field_name);
-    let entry = Entry::new(SERVICE_NAME, &username)
-        .map_err(|e| {
-            log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
-            "Cannot access system keyring. Please check your system permissions.".to_string()
-        })?;
+    let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+        log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+        "Cannot access system keyring. Please check your system permissions.".to_string()
+    })?;
 
-    let value = entry.get_password()
-        .map_err(|e| {
-            log::warn!("Failed to load '{}' from keyring: {}", field_name, e);
-            format!("Not authenticated. Missing token field '{}'. Please log in first.", field_name)
-        })?;
+    let value = entry.get_password().map_err(|e| {
+        log::warn!("Failed to load '{}' from keyring: {}", field_name, e);
+        format!(
+            "Not authenticated. Missing token field '{}'. Please log in first.",
+            field_name
+        )
+    })?;
 
     // Check if this is metadata (chunk count) or actual data
     // Metadata has "CHUNKS:" prefix to avoid confusion with numeric data
     if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
-        let chunk_count = chunk_count_str.parse::<usize>()
-            .map_err(|e| {
-                log::error!("Failed to parse chunk count for '{}': {}", field_name, e);
-                format!("Corrupted metadata for '{}'. Please log in again.", field_name)
-            })?;
+        let chunk_count = chunk_count_str.parse::<usize>().map_err(|e| {
+            log::error!("Failed to parse chunk count for '{}': {}", field_name, e);
+            format!(
+                "Corrupted metadata for '{}'. Please log in again.",
+                field_name
+            )
+        })?;
 
         // This is chunked data, load all chunks
-        log::debug!("Token field '{}' is chunked, loading {} chunks", field_name, chunk_count);
+        log::debug!(
+            "Token field '{}' is chunked, loading {} chunks",
+            field_name,
+            chunk_count
+        );
 
         let mut chunks = Vec::with_capacity(chunk_count);
 
         for chunk_index in 1..=chunk_count {
             let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
-            let entry = Entry::new(SERVICE_NAME, &username)
-                .map_err(|e| {
-                    log::error!("Keyring entry creation failed for '{}' chunk {}: {}", field_name, chunk_index, e);
-                    "Cannot access system keyring.".to_string()
-                })?;
+            let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+                log::error!(
+                    "Keyring entry creation failed for '{}' chunk {}: {}",
+                    field_name,
+                    chunk_index,
+                    e
+                );
+                "Cannot access system keyring.".to_string()
+            })?;
 
-            let chunk = entry.get_password()
-                .map_err(|e| {
-                    log::error!("Failed to load '{}' chunk {} from keyring: {}", field_name, chunk_index, e);
-                    format!("Missing '{}' chunk {}. Please log in again.", field_name, chunk_index)
-                })?;
+            let chunk = entry.get_password().map_err(|e| {
+                log::error!(
+                    "Failed to load '{}' chunk {} from keyring: {}",
+                    field_name,
+                    chunk_index,
+                    e
+                );
+                format!(
+                    "Missing '{}' chunk {}. Please log in again.",
+                    field_name, chunk_index
+                )
+            })?;
 
-            log::debug!("Token field '{}' chunk {}/{} loaded ({} chars)",
-                       field_name, chunk_index, chunk_count, chunk.len());
+            log::debug!(
+                "Token field '{}' chunk {}/{} loaded ({} chars)",
+                field_name,
+                chunk_index,
+                chunk_count,
+                chunk.len()
+            );
             chunks.push(chunk);
         }
 
         let reassembled = chunks.join("");
-        log::info!("Token field '{}' loaded successfully ({} chars from {} chunks)",
-                   field_name, reassembled.len(), chunk_count);
+        log::info!(
+            "Token field '{}' loaded successfully ({} chars from {} chunks)",
+            field_name,
+            reassembled.len(),
+            chunk_count
+        );
         Ok(reassembled)
     } else {
         // Single entry, return as-is
-        log::debug!("Token field '{}' loaded successfully ({} chars, single entry)", field_name, value.len());
+        log::debug!(
+            "Token field '{}' loaded successfully ({} chars, single entry)",
+            field_name,
+            value.len()
+        );
         Ok(value)
     }
 }
@@ -232,11 +298,10 @@ fn load_token_field(field_name: &str) -> Result<String, String> {
 /// Delete a token field from keyring, including all chunks if present
 fn delete_token_field(field_name: &str) -> Result<(), String> {
     let username = format!("{}.{}", USERNAME_PREFIX, field_name);
-    let entry = Entry::new(SERVICE_NAME, &username)
-        .map_err(|e| {
-            log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
-            format!("Cannot access system keyring for '{}'.", field_name)
-        })?;
+    let entry = Entry::new(SERVICE_NAME, &username).map_err(|e| {
+        log::error!("Keyring entry creation failed for '{}': {}", field_name, e);
+        format!("Cannot access system keyring for '{}'.", field_name)
+    })?;
 
     // Try to read the entry to check if it's chunked
     if let Ok(value) = entry.get_password() {
@@ -244,15 +309,27 @@ fn delete_token_field(field_name: &str) -> Result<(), String> {
         if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
             if let Ok(chunk_count) = chunk_count_str.parse::<usize>() {
                 // This is chunked data, delete all chunks
-                log::debug!("Token field '{}' is chunked, deleting {} chunks", field_name, chunk_count);
+                log::debug!(
+                    "Token field '{}' is chunked, deleting {} chunks",
+                    field_name,
+                    chunk_count
+                );
 
                 for chunk_index in 1..=chunk_count {
                     let username = format!("{}.{}_{}", USERNAME_PREFIX, field_name, chunk_index);
                     if let Ok(chunk_entry) = Entry::new(SERVICE_NAME, &username) {
                         match chunk_entry.delete_password() {
-                            Ok(_) => log::debug!("Token field '{}' chunk {} deleted", field_name, chunk_index),
-                            Err(e) => log::warn!("Failed to delete '{}' chunk {}: {} (may not exist)",
-                                                field_name, chunk_index, e),
+                            Ok(_) => log::debug!(
+                                "Token field '{}' chunk {} deleted",
+                                field_name,
+                                chunk_index
+                            ),
+                            Err(e) => log::warn!(
+                                "Failed to delete '{}' chunk {}: {} (may not exist)",
+                                field_name,
+                                chunk_index,
+                                e
+                            ),
                         }
                     }
                 }
@@ -267,7 +344,11 @@ fn delete_token_field(field_name: &str) -> Result<(), String> {
             Ok(())
         }
         Err(e) => {
-            log::warn!("Failed to delete '{}' from keyring: {} (may not exist)", field_name, e);
+            log::warn!(
+                "Failed to delete '{}' from keyring: {} (may not exist)",
+                field_name,
+                e
+            );
             Ok(()) // Don't treat as error if entry doesn't exist
         }
     }
@@ -275,7 +356,9 @@ fn delete_token_field(field_name: &str) -> Result<(), String> {
 
 /// Store authentication tokens securely in the OS keyring (split into separate entries, chunked if needed)
 pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
-    log::info!("Attempting to store authentication tokens in keyring (split storage mode with chunking)");
+    log::info!(
+        "Attempting to store authentication tokens in keyring (split storage mode with chunking)"
+    );
 
     // Prepare token fields as string values
     let token_values = [
@@ -297,7 +380,9 @@ pub fn store_tokens(tokens: &AuthTokens) -> Result<(), String> {
 
 /// Load authentication tokens from the OS keyring (from separate entries, reassembling chunks if needed)
 pub fn load_tokens() -> Result<AuthTokens, String> {
-    log::info!("Attempting to load authentication tokens from keyring (split storage mode with chunking)");
+    log::info!(
+        "Attempting to load authentication tokens from keyring (split storage mode with chunking)"
+    );
 
     // Load each token field (will be automatically reassembled if chunked)
     let access_token = load_token_field("access_token")?;
@@ -307,11 +392,10 @@ pub fn load_tokens() -> Result<AuthTokens, String> {
     let session_state = load_token_field("session_state")?;
 
     // Parse expires_at
-    let expires_at = expires_at_str.parse::<i64>()
-        .map_err(|e| {
-            log::error!("Failed to parse expires_at as i64: {}", e);
-            "Login credentials are corrupted. Please log in again.".to_string()
-        })?;
+    let expires_at = expires_at_str.parse::<i64>().map_err(|e| {
+        log::error!("Failed to parse expires_at as i64: {}", e);
+        "Login credentials are corrupted. Please log in again.".to_string()
+    })?;
 
     let tokens = AuthTokens {
         access_token,
@@ -340,7 +424,10 @@ pub fn delete_tokens() -> Result<(), String> {
 
     if !errors.is_empty() {
         log::error!("Errors occurred while deleting token entries: {:?}", errors);
-        return Err(format!("Failed to clear some login credentials: {}", errors.join(", ")));
+        return Err(format!(
+            "Failed to clear some login credentials: {}",
+            errors.join(", ")
+        ));
     }
 
     log::info!("Authentication tokens deleted successfully");
@@ -382,7 +469,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         "auth",
-        WebviewUrl::External("https://app.educartable.com".parse().unwrap())
+        WebviewUrl::External("https://app.educartable.com".parse().unwrap()),
     )
     .title("Login to Educartable")
     .inner_size(800.0, 700.0)
@@ -409,11 +496,10 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     // Spawn a blocking task to wait for the login with timeout
     log::debug!("Waiting for user to complete login (300s timeout)");
     let _url = tokio::task::spawn_blocking(move || {
-        rx.recv_timeout(Duration::from_secs(300))
-            .map_err(|_| {
-                log::error!("Login timeout: no response within 300 seconds");
-                "Login timeout: no response within 300 seconds".to_string()
-            })
+        rx.recv_timeout(Duration::from_secs(300)).map_err(|_| {
+            log::error!("Login timeout: no response within 300 seconds");
+            "Login timeout: no response within 300 seconds".to_string()
+        })
     })
     .await
     .map_err(|e| {
@@ -440,20 +526,18 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     "#;
 
     log::debug!("Injecting JavaScript to extract tokens from localStorage");
-    webview.eval(js_code)
-        .map_err(|e| {
-            log::error!("Failed to inject JavaScript: {}", e);
-            "Login window error. Please try again.".to_string()
-        })?;
+    webview.eval(js_code).map_err(|e| {
+        log::error!("Failed to inject JavaScript: {}", e);
+        "Login window error. Please try again.".to_string()
+    })?;
 
     // Wait for the tokens with timeout
     log::debug!("Waiting for tokens from webview (5s timeout)");
     let tokens_str: String = tokio::task::spawn_blocking(move || {
-        token_rx.recv_timeout(Duration::from_secs(5))
-            .map_err(|_| {
-                log::error!("Timeout waiting for tokens from webview");
-                "Login completion timeout. Please try again.".to_string()
-            })
+        token_rx.recv_timeout(Duration::from_secs(5)).map_err(|_| {
+            log::error!("Timeout waiting for tokens from webview");
+            "Login completion timeout. Please try again.".to_string()
+        })
     })
     .await
     .map_err(|e| {
@@ -479,11 +563,10 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
 
     // Parse the JSON string into AuthTokens
     log::debug!("Parsing extracted tokens");
-    let tokens: AuthTokens = serde_json::from_str(&tokens_str)
-        .map_err(|e| {
-            log::error!("Failed to parse tokens from JSON: {}", e);
-            "Login data error. Please try again.".to_string()
-        })?;
+    let tokens: AuthTokens = serde_json::from_str(&tokens_str).map_err(|e| {
+        log::error!("Failed to parse tokens from JSON: {}", e);
+        "Login data error. Please try again.".to_string()
+    })?;
 
     // Store tokens securely in the OS keyring
     store_tokens(&tokens)?;
@@ -506,7 +589,8 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, Str
     log::info!("Attempting to refresh access token");
 
     let client = reqwest::Client::new();
-    let token_url = "https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token";
+    let token_url =
+        "https://accounts.edumoov.com/auth/realms/edumoov/protocol/openid-connect/token";
 
     // Prepare form data for token refresh
     let params = [
@@ -531,8 +615,12 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, Str
 
     if !status.is_success() {
         let error_body = response.text().await.unwrap_or_default();
-        log::error!("Token refresh failed with status {}: {}", status, error_body);
-        return Err(format!("Token refresh failed. Please log in again."));
+        log::error!(
+            "Token refresh failed with status {}: {}",
+            status,
+            error_body
+        );
+        return Err("Token refresh failed. Please log in again.".to_string());
     }
 
     // Parse the response
@@ -568,7 +656,10 @@ pub async fn refresh_access_token(refresh_token: &str) -> Result<AuthTokens, Str
     // Store the new tokens
     store_tokens(&tokens)?;
 
-    log::info!("Access token refreshed successfully, expires at {}", expires_at);
+    log::info!(
+        "Access token refreshed successfully, expires at {}",
+        expires_at
+    );
     Ok(tokens)
 }
 
@@ -673,11 +764,19 @@ mod tests {
 
         // Store tokens
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store small tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store small tokens: {:?}",
+            store_result.err()
+        );
 
         // Load tokens back
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load small tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load small tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, tokens.access_token);
@@ -698,10 +797,18 @@ mod tests {
         let tokens = create_test_tokens(1000);
 
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store boundary tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store boundary tokens: {:?}",
+            store_result.err()
+        );
 
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load boundary tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load boundary tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, tokens.access_token);
@@ -721,10 +828,18 @@ mod tests {
         let tokens = create_test_tokens(2500);
 
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store large tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store large tokens: {:?}",
+            store_result.err()
+        );
 
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load large tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load large tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token.len(), 2500);
@@ -747,10 +862,18 @@ mod tests {
         let tokens = create_test_tokens(5000);
 
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store very large tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store very large tokens: {:?}",
+            store_result.err()
+        );
 
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load very large tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load very large tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token.len(), 5000);
@@ -779,10 +902,18 @@ mod tests {
         };
 
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store UTF-8 tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store UTF-8 tokens: {:?}",
+            store_result.err()
+        );
 
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load UTF-8 tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load UTF-8 tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, emoji_string);
@@ -809,10 +940,18 @@ mod tests {
         };
 
         let store_result = store_tokens(&tokens);
-        assert!(store_result.is_ok(), "Failed to store Japanese tokens: {:?}", store_result.err());
+        assert!(
+            store_result.is_ok(),
+            "Failed to store Japanese tokens: {:?}",
+            store_result.err()
+        );
 
         let loaded = load_tokens();
-        assert!(loaded.is_ok(), "Failed to load Japanese tokens: {:?}", loaded.err());
+        assert!(
+            loaded.is_ok(),
+            "Failed to load Japanese tokens: {:?}",
+            loaded.err()
+        );
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, japanese);
@@ -837,16 +976,24 @@ mod tests {
 
         // Delete tokens
         let delete_result = delete_tokens();
-        assert!(delete_result.is_ok(), "Failed to delete tokens: {:?}", delete_result.err());
+        assert!(
+            delete_result.is_ok(),
+            "Failed to delete tokens: {:?}",
+            delete_result.err()
+        );
 
         // Verify they're gone
         let loaded_after_delete = load_tokens();
-        assert!(loaded_after_delete.is_err(), "Tokens should not exist after deletion");
+        assert!(
+            loaded_after_delete.is_err(),
+            "Tokens should not exist after deletion"
+        );
 
         cleanup_test_tokens();
     }
 
     #[test]
+    #[ignore] // Requires system keyring
     fn test_delete_chunked_tokens() {
         cleanup_test_tokens();
 
@@ -857,27 +1004,40 @@ mod tests {
 
         // Delete tokens (should delete all chunks)
         let delete_result = delete_tokens();
-        assert!(delete_result.is_ok(), "Failed to delete chunked tokens: {:?}", delete_result.err());
+        assert!(
+            delete_result.is_ok(),
+            "Failed to delete chunked tokens: {:?}",
+            delete_result.err()
+        );
 
         // Verify they're gone
         let loaded_after_delete = load_tokens();
-        assert!(loaded_after_delete.is_err(), "Chunked tokens should not exist after deletion");
+        assert!(
+            loaded_after_delete.is_err(),
+            "Chunked tokens should not exist after deletion"
+        );
 
         cleanup_test_tokens();
     }
 
     #[test]
+    #[ignore] // Requires system keyring
     fn test_delete_nonexistent_tokens() {
         cleanup_test_tokens();
 
         // Deleting tokens that don't exist should not error
         let delete_result = delete_tokens();
-        assert!(delete_result.is_ok(), "Deleting nonexistent tokens should succeed: {:?}", delete_result.err());
+        assert!(
+            delete_result.is_ok(),
+            "Deleting nonexistent tokens should succeed: {:?}",
+            delete_result.err()
+        );
 
         cleanup_test_tokens();
     }
 
     #[test]
+    #[ignore] // Requires system keyring
     fn test_load_nonexistent_tokens() {
         cleanup_test_tokens();
 
@@ -979,7 +1139,11 @@ mod tests {
 
         // Get valid access token (should return without refreshing)
         let result = get_valid_access_token().await;
-        assert!(result.is_ok(), "Should succeed with valid token: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should succeed with valid token: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), "valid_access_token");
 
         cleanup_test_tokens();
@@ -1000,7 +1164,11 @@ mod tests {
         // Check authentication when no tokens exist
         let result = is_authenticated().await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false, "Should not be authenticated without tokens");
+        assert_eq!(
+            result.unwrap(),
+            false,
+            "Should not be authenticated without tokens"
+        );
 
         cleanup_test_tokens();
     }
@@ -1031,7 +1199,11 @@ mod tests {
         // Check authentication status
         let result = is_authenticated().await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true, "Should be authenticated with valid tokens");
+        assert_eq!(
+            result.unwrap(),
+            true,
+            "Should be authenticated with valid tokens"
+        );
 
         cleanup_test_tokens();
     }
@@ -1081,11 +1253,17 @@ mod tests {
 
         // Token expires in 30 seconds - should trigger refresh (within 60s window)
         let soon_expiry = now + 30;
-        assert!(soon_expiry <= now + 60, "Soon-expiring token should trigger refresh");
+        assert!(
+            soon_expiry <= now + 60,
+            "Soon-expiring token should trigger refresh"
+        );
 
         // Token already expired
         let past_expiry = now - 100;
-        assert!(past_expiry <= now + 60, "Expired token should trigger refresh");
+        assert!(
+            past_expiry <= now + 60,
+            "Expired token should trigger refresh"
+        );
     }
 
     #[tokio::test]

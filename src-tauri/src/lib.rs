@@ -1,8 +1,8 @@
-mod auth;
 mod api;
-mod sync;
+mod auth;
 mod config;
 mod models;
+mod sync;
 mod updater;
 
 use tauri::Manager;
@@ -16,7 +16,9 @@ fn greet(name: &str) -> String {
 /// Open the logs directory in the system file explorer
 #[tauri::command]
 async fn open_logs_directory(app: tauri::AppHandle) -> Result<(), String> {
-    let log_dir = app.path().app_log_dir()
+    let log_dir = app
+        .path()
+        .app_log_dir()
         .map_err(|e| format!("Failed to get logs directory: {}", e))?;
 
     log::info!("Opening logs directory: {:?}", log_dir);
@@ -49,7 +51,9 @@ pub fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                 ])
                 .level(if cfg!(debug_assertions) {

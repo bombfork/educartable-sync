@@ -1,19 +1,19 @@
 // Sync engine for downloading media
 
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
-use reqwest::Client;
-use std::path::{Path, PathBuf};
-use tokio::time::{sleep, Duration};
-use tokio::fs;
-use tauri::{AppHandle, Emitter};
 use crate::api::EducartableClient;
 use crate::models::{Activity, Media, SyncProgress, SyncStats};
+use reqwest::Client;
+use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Emitter};
+use tokio::fs;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
+use tokio::time::{sleep, Duration};
 
 // Issue #24: File download from signed CDN URLs
 pub async fn download_file(
     url: &str,
-    destination: &Path
+    destination: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     log::debug!("Downloading file to {:?}", destination);
 
@@ -43,14 +43,9 @@ pub async fn download_file(
 }
 
 // Issue #25: Directory structure creation
-pub fn get_activity_folder(
-    sync_path: &PathBuf,
-    activity: &Activity
-) -> PathBuf {
+pub fn get_activity_folder(sync_path: &Path, activity: &Activity) -> PathBuf {
     // Extract date (YYYY-MM-DD from ISO datetime)
-    let date = activity.date.split('T')
-        .next()
-        .unwrap_or("unknown-date");
+    let date = activity.date.split('T').next().unwrap_or("unknown-date");
 
     // Sanitize title for filesystem
     let safe_title = sanitize_filename(&activity.title);
@@ -61,11 +56,7 @@ pub fn get_activity_folder(
     sync_path.join(folder_name)
 }
 
-pub fn get_media_path(
-    sync_path: &PathBuf,
-    activity: &Activity,
-    media: &Media
-) -> PathBuf {
+pub fn get_media_path(sync_path: &Path, activity: &Activity, media: &Media) -> PathBuf {
     let folder = get_activity_folder(sync_path, activity);
 
     // Build filename with extension
@@ -75,7 +66,8 @@ pub fn get_media_path(
 }
 
 fn sanitize_filename(title: &str) -> String {
-    title.chars()
+    title
+        .chars()
         .map(|c| {
             if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
                 c
@@ -85,17 +77,21 @@ fn sanitize_filename(title: &str) -> String {
         })
         .collect::<String>()
         .chars()
-        .take(50)  // Limit length
+        .take(50) // Limit length
         .collect()
 }
 
 // Issue #5: Save article text as markdown
 pub async fn save_article_markdown(
-    sync_path: &PathBuf,
-    activity: &Activity
+    sync_path: &Path,
+    activity: &Activity,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let folder = get_activity_folder(sync_path, activity);
-    log::debug!("Saving article markdown for activity {} to {:?}", activity.id, folder);
+    log::debug!(
+        "Saving article markdown for activity {} to {:?}",
+        activity.id,
+        folder
+    );
 
     // Create directory if it doesn't exist
     tokio::fs::create_dir_all(&folder).await?;
@@ -115,15 +111,11 @@ pub async fn save_article_markdown(
 
 fn format_article_markdown(activity: &Activity) -> String {
     // Extract date (YYYY-MM-DD from ISO datetime)
-    let date = activity.date.split('T')
-        .next()
-        .unwrap_or("unknown-date");
+    let date = activity.date.split('T').next().unwrap_or("unknown-date");
 
     format!(
         "# {}\n\nPublished: {}\n\n{}",
-        activity.title,
-        date,
-        activity.body
+        activity.title, date, activity.body
     )
 }
 
@@ -151,16 +143,24 @@ pub async fn should_download_file(
     // If file is significantly smaller than expected (less than 50%), it might be corrupted
     let size_ratio = actual_size as f64 / expected_size as f64;
     if size_ratio < 0.5 {
-        log::warn!("File exists but is suspiciously small ({} bytes, expected {}), will re-download: {:?}",
-            actual_size, expected_size, path);
+        log::warn!(
+            "File exists but is suspiciously small ({} bytes, expected {}), will re-download: {:?}",
+            actual_size,
+            expected_size,
+            path
+        );
         return Ok(true);
     }
 
     // File exists and seems valid - skip download
     // Note: API size is often inaccurate (reports uncompressed size while CDN serves compressed),
     // so we don't do exact size matching
-    log::debug!("File already exists ({} bytes, API reports {} bytes), skipping: {:?}",
-        actual_size, expected_size, path);
+    log::debug!(
+        "File already exists ({} bytes, API reports {} bytes), skipping: {:?}",
+        actual_size,
+        expected_size,
+        path
+    );
     Ok(false)
 }
 
@@ -178,31 +178,46 @@ pub async fn download_with_retry(
 
         match download_file(url, destination).await {
             Ok(_) => {
-                log::debug!("Download successful on attempt {} for {:?}", attempt, destination);
+                log::debug!(
+                    "Download successful on attempt {} for {:?}",
+                    attempt,
+                    destination
+                );
                 return Ok(());
             }
             Err(e) => {
                 if attempt >= max_retries {
-                    log::error!("Download failed after {} attempts for {:?}: {}", attempt, destination, e);
+                    log::error!(
+                        "Download failed after {} attempts for {:?}: {}",
+                        attempt,
+                        destination,
+                        e
+                    );
                     return Err(format!("Failed after {} attempts: {}", attempt, e).into());
                 }
 
                 // Check if error is retryable
-                if !is_retryable_error(&e) {
+                if !is_retryable_error(e.as_ref()) {
                     log::error!("Non-retryable error for {:?}: {}", destination, e);
                     return Err(e);
                 }
 
                 // Exponential backoff: 2^attempt seconds
                 let wait_time = 2_u64.pow(attempt);
-                log::warn!("Download attempt {} failed for {:?}, retrying in {}s: {}", attempt, destination, wait_time, e);
+                log::warn!(
+                    "Download attempt {} failed for {:?}, retrying in {}s: {}",
+                    attempt,
+                    destination,
+                    wait_time,
+                    e
+                );
                 sleep(Duration::from_secs(wait_time)).await;
             }
         }
     }
 }
 
-fn is_retryable_error(error: &Box<dyn std::error::Error + Send + Sync>) -> bool {
+fn is_retryable_error(error: &dyn std::error::Error) -> bool {
     let error_str = error.to_string().to_lowercase();
 
     // Network errors are retryable
@@ -257,16 +272,18 @@ impl SyncEngine {
 
         // Get parent ID
         log::info!("Fetching parent ID");
-        let parent_id = self.api_client.get_parent_id().await
-            .map_err(|e| {
-                log::error!("Failed to get user info: {}", e);
-                "Cannot access your account information. Please check your connection.".to_string()
-            })?;
+        let parent_id = self.api_client.get_parent_id().await.map_err(|e| {
+            log::error!("Failed to get user info: {}", e);
+            "Cannot access your account information. Please check your connection.".to_string()
+        })?;
 
         // Fetch all activities
         self.emit_progress(0, 0, "Fetching activities...".to_string());
         log::info!("Fetching all activities");
-        let activities = self.api_client.fetch_all_activities(parent_id).await
+        let activities = self
+            .api_client
+            .fetch_all_activities(parent_id)
+            .await
             .map_err(|e| {
                 log::error!("Failed to fetch activities: {}", e);
                 "Cannot load activities from Educartable. Please check your connection.".to_string()
@@ -276,9 +293,7 @@ impl SyncEngine {
         log::info!("Found {} activities to process", stats.total_activities);
 
         // Count total media files
-        let total_media: u32 = activities.iter()
-            .map(|a| a.medias.len() as u32)
-            .sum();
+        let total_media: u32 = activities.iter().map(|a| a.medias.len() as u32).sum();
         stats.total_media = total_media;
         log::info!("Found {} total media files to sync", total_media);
 
@@ -299,25 +314,40 @@ impl SyncEngine {
 
                 // Prepare filename for progress display
                 let filename = format!("{}{}", media.name, media.extension);
-                log::debug!("Processing media {}/{}: {}", processed_media, total_media, filename);
+                log::debug!(
+                    "Processing media {}/{}: {}",
+                    processed_media,
+                    total_media,
+                    filename
+                );
                 self.emit_progress(processed_media, total_media, filename.clone());
 
                 // Get destination path
                 let destination = get_media_path(&self.sync_path, activity, media);
 
                 // Check if file needs downloading
-                log::debug!("Checking if file needs download: {} (expected size: {} bytes)", filename, media.size);
+                log::debug!(
+                    "Checking if file needs download: {} (expected size: {} bytes)",
+                    filename,
+                    media.size
+                );
                 match should_download_file(&destination, media.size).await {
                     Ok(true) => {
                         // File needs downloading
                         log::info!("Downloading: {}", filename);
-                        match self.api_client.get_signed_media_url(&media.id, &filename).await {
+                        match self
+                            .api_client
+                            .get_signed_media_url(&media.id, &filename)
+                            .await
+                        {
                             Ok(signed_url) => {
                                 // Download with retry
                                 match download_with_retry(&signed_url, &destination, 3).await {
                                     Ok(_) => {
                                         // Verify downloaded file size
-                                        if let Ok(metadata) = tokio::fs::metadata(&destination).await {
+                                        if let Ok(metadata) =
+                                            tokio::fs::metadata(&destination).await
+                                        {
                                             log::info!("Successfully downloaded: {} ({} bytes, expected {} bytes)",
                                                 filename, metadata.len(), media.size);
                                         } else {
@@ -353,7 +383,12 @@ impl SyncEngine {
         // Emit completion
         self.emit_progress(total_media, total_media, "Sync complete!".to_string());
 
-        log::info!("Sync completed. Downloaded: {}, Skipped: {}, Failed: {}", stats.downloaded, stats.skipped, stats.failed);
+        log::info!(
+            "Sync completed. Downloaded: {}, Skipped: {}, Failed: {}",
+            stats.downloaded,
+            stats.skipped,
+            stats.failed
+        );
         Ok(stats)
     }
 }
@@ -368,11 +403,10 @@ pub async fn start_sync(
 
     // Verify authentication (this will also attempt token refresh if needed)
     log::debug!("Verifying authentication");
-    crate::auth::load_tokens()
-        .map_err(|e| {
-            log::error!("Not authenticated: {}", e);
-            e  // Pass through the user-friendly message from auth module
-        })?;
+    crate::auth::load_tokens().map_err(|e| {
+        log::error!("Not authenticated: {}", e);
+        e // Pass through the user-friendly message from auth module
+    })?;
 
     // Validate sync path
     if config.sync_path.as_os_str().is_empty() {
@@ -390,11 +424,10 @@ pub async fn start_sync(
 
     // Run synchronization
     log::info!("Starting synchronization");
-    let result = sync_engine.sync_all().await
-        .map_err(|e| {
-            log::error!("Sync failed: {}", e);
-            e.to_string()
-        });
+    let result = sync_engine.sync_all().await.map_err(|e| {
+        log::error!("Sync failed: {}", e);
+        e.to_string()
+    });
 
     match &result {
         Ok(stats) => log::info!("Sync completed successfully: {:?}", stats),
@@ -602,10 +635,17 @@ mod tests {
     #[test]
     fn test_get_activity_folder_with_invalid_chars() {
         let sync_path = PathBuf::from("/sync");
-        let activity = create_test_activity("456", "2024-12-25T00:00:00Z", "Test/Activity\\With:Invalid*Chars?");
+        let activity = create_test_activity(
+            "456",
+            "2024-12-25T00:00:00Z",
+            "Test/Activity\\With:Invalid*Chars?",
+        );
 
         let result = get_activity_folder(&sync_path, &activity);
-        assert_eq!(result, PathBuf::from("/sync/2024-12-25_Test_Activity_With_Invalid_Chars_"));
+        assert_eq!(
+            result,
+            PathBuf::from("/sync/2024-12-25_Test_Activity_With_Invalid_Chars_")
+        );
     }
 
     #[test]
@@ -685,11 +725,18 @@ mod tests {
     #[test]
     fn test_get_media_path_complex_activity_title() {
         let sync_path = PathBuf::from("/sync");
-        let activity = create_test_activity("4", "2024-11-30T16:30:00Z", "Activity/With\\Invalid:Chars*?");
+        let activity = create_test_activity(
+            "4",
+            "2024-11-30T16:30:00Z",
+            "Activity/With\\Invalid:Chars*?",
+        );
         let media = create_test_media("400", "image123", ".png");
 
         let result = get_media_path(&sync_path, &activity, &media);
-        assert_eq!(result, PathBuf::from("/sync/2024-11-30_Activity_With_Invalid_Chars__/image123.png"));
+        assert_eq!(
+            result,
+            PathBuf::from("/sync/2024-11-30_Activity_With_Invalid_Chars__/image123.png")
+        );
     }
 
     #[test]
@@ -700,7 +747,10 @@ mod tests {
         let media = create_test_media("500", "image-with-dashes_and_underscores", ".jpg");
 
         let result = get_media_path(&sync_path, &activity, &media);
-        assert_eq!(result, PathBuf::from("/sync/2024-08-05_Test/image-with-dashes_and_underscores.jpg"));
+        assert_eq!(
+            result,
+            PathBuf::from("/sync/2024-08-05_Test/image-with-dashes_and_underscores.jpg")
+        );
     }
 
     // ========== Tests for is_retryable_error ==========
@@ -708,55 +758,82 @@ mod tests {
     #[test]
     fn test_is_retryable_error_connection() {
         let error: Box<dyn std::error::Error + Send + Sync> = "connection refused".into();
-        assert!(is_retryable_error(&error), "Connection errors should be retryable");
+        assert!(
+            is_retryable_error(error.as_ref()),
+            "Connection errors should be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_timeout() {
         let error: Box<dyn std::error::Error + Send + Sync> = "request timeout".into();
-        assert!(is_retryable_error(&error), "Timeout errors should be retryable");
+        assert!(
+            is_retryable_error(error.as_ref()),
+            "Timeout errors should be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_network() {
         let error: Box<dyn std::error::Error + Send + Sync> = "network error occurred".into();
-        assert!(is_retryable_error(&error), "Network errors should be retryable");
+        assert!(
+            is_retryable_error(error.as_ref()),
+            "Network errors should be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_timed_out() {
         let error: Box<dyn std::error::Error + Send + Sync> = "operation timed out".into();
-        assert!(is_retryable_error(&error), "Timed out errors should be retryable");
+        assert!(
+            is_retryable_error(error.as_ref()),
+            "Timed out errors should be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_case_insensitive() {
         let error: Box<dyn std::error::Error + Send + Sync> = "CONNECTION TIMEOUT".into();
-        assert!(is_retryable_error(&error), "Error checking should be case insensitive");
+        assert!(
+            is_retryable_error(error.as_ref()),
+            "Error checking should be case insensitive"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_file_not_found() {
         let error: Box<dyn std::error::Error + Send + Sync> = "file not found".into();
-        assert!(!is_retryable_error(&error), "File errors should not be retryable");
+        assert!(
+            !is_retryable_error(error.as_ref()),
+            "File errors should not be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_permission_denied() {
         let error: Box<dyn std::error::Error + Send + Sync> = "permission denied".into();
-        assert!(!is_retryable_error(&error), "Permission errors should not be retryable");
+        assert!(
+            !is_retryable_error(error.as_ref()),
+            "Permission errors should not be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_invalid_url() {
         let error: Box<dyn std::error::Error + Send + Sync> = "invalid URL".into();
-        assert!(!is_retryable_error(&error), "Invalid URL should not be retryable");
+        assert!(
+            !is_retryable_error(error.as_ref()),
+            "Invalid URL should not be retryable"
+        );
     }
 
     #[test]
     fn test_is_retryable_error_http_404() {
         let error: Box<dyn std::error::Error + Send + Sync> = "HTTP 404 Not Found".into();
-        assert!(!is_retryable_error(&error), "404 errors should not be retryable");
+        assert!(
+            !is_retryable_error(error.as_ref()),
+            "404 errors should not be retryable"
+        );
     }
 
     // ========== Tests for should_download_file ==========
@@ -768,7 +845,11 @@ mod tests {
 
         let result = should_download_file(&file_path, 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true, "Should download file that doesn't exist");
+        assert_eq!(
+            result.unwrap(),
+            true,
+            "Should download file that doesn't exist"
+        );
     }
 
     #[tokio::test]
@@ -794,7 +875,11 @@ mod tests {
 
         let result = should_download_file(&file_path, 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true, "Should re-download corrupted small file");
+        assert_eq!(
+            result.unwrap(),
+            true,
+            "Should re-download corrupted small file"
+        );
     }
 
     #[tokio::test]
@@ -833,7 +918,11 @@ mod tests {
 
         let result = should_download_file(&file_path, 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false, "Should skip file larger than expected");
+        assert_eq!(
+            result.unwrap(),
+            false,
+            "Should skip file larger than expected"
+        );
     }
 
     #[tokio::test]
@@ -847,7 +936,11 @@ mod tests {
         let result = should_download_file(&file_path, 1000).await;
         assert!(result.is_ok());
         // At exactly 50%, size_ratio is 0.5 which is NOT < 0.5, so should skip
-        assert_eq!(result.unwrap(), false, "Should skip file at exactly 50% threshold");
+        assert_eq!(
+            result.unwrap(),
+            false,
+            "Should skip file at exactly 50% threshold"
+        );
     }
 
     #[tokio::test]
@@ -860,7 +953,11 @@ mod tests {
 
         let result = should_download_file(&file_path, 1000).await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true, "Should re-download file just below 50% threshold");
+        assert_eq!(
+            result.unwrap(),
+            true,
+            "Should re-download file just below 50% threshold"
+        );
     }
 
     // ========== Tests for Retry Logic Concepts ==========
@@ -882,11 +979,19 @@ mod tests {
         let max_retries = 3;
 
         for attempt in 1..=max_retries {
-            assert!(attempt <= max_retries, "Attempt {} should be within max retries", attempt);
+            assert!(
+                attempt <= max_retries,
+                "Attempt {} should be within max retries",
+                attempt
+            );
         }
 
         let attempt = max_retries + 1;
-        assert!(attempt > max_retries, "Attempt {} should exceed max retries", attempt);
+        assert!(
+            attempt > max_retries,
+            "Attempt {} should exceed max retries",
+            attempt
+        );
     }
 
     #[test]
@@ -901,7 +1006,9 @@ mod tests {
             assert!(attempt <= max_retries);
         }
 
-        assert_eq!(attempt, max_retries, "Should reach exactly max_retries attempts");
+        assert_eq!(
+            attempt, max_retries,
+            "Should reach exactly max_retries attempts"
+        );
     }
 }
-

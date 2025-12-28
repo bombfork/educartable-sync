@@ -4,6 +4,8 @@ env_file = ".env"
 [tools]
 rust = "stable"
 jq = "latest"
+hk = "latest"
+pkl = "latest"
 
 [tasks.dev]
 description = "Run Tauri dev with configurable log level"
@@ -17,6 +19,10 @@ run = """
 echo "Starting Tauri dev with RUST_LOG=${usage_log_level:-info}"
 RUST_LOG=${usage_log_level:-info} cargo tauri dev
 """
+
+[tasks.test]
+description = "Run Rust tests"
+run = "cargo test --manifest-path src-tauri/Cargo.toml"
 
 [tasks.build]
 description = "Build the application"
