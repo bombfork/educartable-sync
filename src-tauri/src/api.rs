@@ -121,19 +121,23 @@ impl HttpClient for ReqwestHttpClient {
 
 pub struct EducartableClient<H: HttpClient> {
     http_client: Arc<H>,
+    credential_store: Arc<dyn auth::CredentialStore>,
 }
 
 impl<H: HttpClient> EducartableClient<H> {
-    pub fn new(http_client: H) -> Self {
+    pub fn new(http_client: H, credential_store: Arc<dyn auth::CredentialStore>) -> Self {
         log::debug!("Creating new EducartableClient");
         Self {
             http_client: Arc::new(http_client),
+            credential_store,
         }
     }
 
     /// Get a valid access token, automatically refreshing if needed
     async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        auth::get_valid_access_token().await.map_err(|e| e.into())
+        auth::get_valid_access_token(self.credential_store.as_ref())
+            .await
+            .map_err(|e| e.into())
     }
 
     async fn get<T: for<'de> Deserialize<'de>>(
@@ -295,11 +299,16 @@ impl<H: HttpClient> EducartableClient<H> {
 impl EducartableClient<ReqwestHttpClient> {
     #[allow(dead_code)]
     pub fn new_default() -> Self {
-        Self::new(ReqwestHttpClient::new())
+        let credential_store = Arc::new(auth::KeyringCredentialStore::new());
+        Self::new(ReqwestHttpClient::new(), credential_store)
     }
 
     pub fn new_no_redirect() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(Self::new(ReqwestHttpClient::new_no_redirect()?))
+        let credential_store = Arc::new(auth::KeyringCredentialStore::new());
+        Ok(Self::new(
+            ReqwestHttpClient::new_no_redirect()?,
+            credential_store,
+        ))
     }
 }
 
@@ -365,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_educartable_client_new() {
-        // Test that client can be constructed
+        // Test that client can be constructed with default credential store
         let client = EducartableClient::new_default();
         // Verify the client struct exists (compilation test)
         drop(client);
@@ -587,7 +596,8 @@ mod tests {
         mock_client.add_response(200, response_body);
 
         // Test: Call get_user_info
-        let client = EducartableClient::new(mock_client);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock_client, credential_store);
         let result = client.get_user_info().await;
 
         // Verify: Check the result
@@ -630,7 +640,8 @@ mod tests {
         mock_client.add_response(401, "Unauthorized");
 
         // Test: Call get_user_info
-        let client = EducartableClient::new(mock_client);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock_client, credential_store);
         let result = client.get_user_info().await;
 
         // Verify: Check that request failed with appropriate error
@@ -698,7 +709,8 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
 
         // Test
         let result = client.get_activities(12345).await;
@@ -759,7 +771,8 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
 
         // Test
         let result = client.get_activities(12345).await;
@@ -809,7 +822,8 @@ mod tests {
         mock.add_response(500, response_body);
 
         // Create client with mock
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
 
         // Test
         let result = client.get_activities(12345).await;
@@ -855,7 +869,8 @@ mod tests {
         mock.add_response_with_headers(302, headers, "");
 
         // Test
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -895,7 +910,8 @@ mod tests {
         mock.add_response_with_headers(302, headers, "");
 
         // Test
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -937,7 +953,8 @@ mod tests {
         mock.add_response(200, "OK");
 
         // Test
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
         let result = client.get_signed_media_url("media123", "photo.jpg").await;
 
         // Verify
@@ -1044,7 +1061,8 @@ mod tests {
         mock.add_response(200, response_body);
 
         // Create client with mock
-        let client = EducartableClient::new(mock);
+        let credential_store = Arc::new(crate::auth::KeyringCredentialStore::new());
+        let client = EducartableClient::new(mock, credential_store);
 
         // Test fetch_all_activities
         let result = client.fetch_all_activities(12345).await;
