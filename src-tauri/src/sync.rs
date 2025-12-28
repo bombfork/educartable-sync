@@ -407,7 +407,7 @@ pub async fn start_sync(
 
     // Verify authentication (this will also attempt token refresh if needed)
     log::debug!("Verifying authentication");
-    crate::auth::load_tokens().map_err(|e| {
+    crate::auth::load_tokens_default().map_err(|e| {
         log::error!("Not authenticated: {}", e);
         e // Pass through the user-friendly message from auth module
     })?;
