@@ -305,6 +305,60 @@ impl EducartableClient<ReqwestHttpClient> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    // ========== MockHttpClient Implementation ==========
+
+    pub struct MockHttpClient {
+        responses: Arc<Mutex<VecDeque<HttpResponse>>>,
+    }
+
+    impl MockHttpClient {
+        pub fn new() -> Self {
+            Self {
+                responses: Arc::new(Mutex::new(VecDeque::new())),
+            }
+        }
+
+        pub fn add_response(&self, status: u16, body: &str) {
+            let response = HttpResponse {
+                status,
+                headers: HashMap::new(),
+                body: body.as_bytes().to_vec(),
+            };
+            self.responses.lock().unwrap().push_back(response);
+        }
+
+        pub fn add_response_with_headers(
+            &self,
+            status: u16,
+            headers: HashMap<String, String>,
+            body: &str,
+        ) {
+            let response = HttpResponse {
+                status,
+                headers,
+                body: body.as_bytes().to_vec(),
+            };
+            self.responses.lock().unwrap().push_back(response);
+        }
+    }
+
+    #[async_trait]
+    impl HttpClient for MockHttpClient {
+        async fn get(
+            &self,
+            _url: &str,
+            _headers: Vec<(&str, &str)>,
+        ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+            self.responses
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| "No mock response available".into())
+        }
+    }
 
     // ========== Tests for EducartableClient ==========
 
