@@ -772,22 +772,30 @@ pub async fn is_authenticated() -> Result<bool, String> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     // NOTE: These tests require access to the system keyring and are marked as #[ignore]
     // by default. They can be run manually with: cargo test -- --ignored
     // These tests may fail in headless CI environments without proper keyring setup.
 
     // Mock credential store for testing
-    struct MockCredentialStore {
-        storage: Mutex<HashMap<String, String>>,
+    pub struct MockCredentialStore {
+        storage: Arc<Mutex<HashMap<String, String>>>,
     }
 
     impl MockCredentialStore {
-        fn new() -> Self {
+        pub fn new() -> Self {
             Self {
-                storage: Mutex::new(HashMap::new()),
+                storage: Arc::new(Mutex::new(HashMap::new())),
             }
+        }
+
+        pub fn clear(&self) {
+            self.storage.lock().unwrap().clear();
+        }
+
+        pub fn contains_key(&self, key: &str) -> bool {
+            self.storage.lock().unwrap().contains_key(key)
         }
     }
 
