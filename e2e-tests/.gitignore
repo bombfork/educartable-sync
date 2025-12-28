@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test results
+allure-results/
+allure-report/
+
+# OS files
+.DS_Store
+Thumbs.db
