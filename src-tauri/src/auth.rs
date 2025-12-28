@@ -875,15 +875,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_store_and_load_small_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Create tokens that are well under the chunk size (1000 bytes)
         let tokens = create_test_tokens(500);
 
         // Store tokens
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store small tokens: {:?}",
@@ -891,7 +890,7 @@ mod tests {
         );
 
         // Load tokens back
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load small tokens: {:?}",
@@ -904,26 +903,23 @@ mod tests {
         assert_eq!(loaded_tokens.id_token, tokens.id_token);
         assert_eq!(loaded_tokens.expires_at, tokens.expires_at);
         assert_eq!(loaded_tokens.session_state, tokens.session_state);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_store_and_load_tokens_at_boundary() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Create tokens exactly at the chunk size boundary (1000 bytes)
         let tokens = create_test_tokens(1000);
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store boundary tokens: {:?}",
             store_result.err()
         );
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load boundary tokens: {:?}",
@@ -934,27 +930,25 @@ mod tests {
         assert_eq!(loaded_tokens.access_token, tokens.access_token);
         assert_eq!(loaded_tokens.refresh_token, tokens.refresh_token);
         assert_eq!(loaded_tokens.id_token, tokens.id_token);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_store_and_load_large_tokens_requiring_chunking() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Create tokens that exceed the chunk size and require chunking
-        // 2500 bytes will require 3 chunks (1000 + 1000 + 500)
+        // Note: MockCredentialStore doesn't implement chunking, but can still store large tokens
+        // 2500 bytes will be stored as-is without chunking
         let tokens = create_test_tokens(2500);
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store large tokens: {:?}",
             store_result.err()
         );
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load large tokens: {:?}",
@@ -968,27 +962,25 @@ mod tests {
         assert_eq!(loaded_tokens.access_token, tokens.access_token);
         assert_eq!(loaded_tokens.refresh_token, tokens.refresh_token);
         assert_eq!(loaded_tokens.id_token, tokens.id_token);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_store_and_load_very_large_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Create very large tokens requiring multiple chunks
-        // 5000 bytes will require 5 chunks
+        // Note: MockCredentialStore doesn't implement chunking, but can still store large tokens
+        // 5000 bytes will be stored as-is without chunking
         let tokens = create_test_tokens(5000);
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store very large tokens: {:?}",
             store_result.err()
         );
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load very large tokens: {:?}",
@@ -998,14 +990,11 @@ mod tests {
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token.len(), 5000);
         assert_eq!(loaded_tokens.access_token, tokens.access_token);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_utf8_boundary_handling() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Create tokens with multi-byte UTF-8 characters
         // The emoji 🦀 is 4 bytes in UTF-8
@@ -1021,14 +1010,14 @@ mod tests {
             session_state: "session".to_string(),
         };
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store UTF-8 tokens: {:?}",
             store_result.err()
         );
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load UTF-8 tokens: {:?}",
@@ -1038,17 +1027,15 @@ mod tests {
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, emoji_string);
         assert_eq!(loaded_tokens.refresh_token, mixed_string);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_utf8_chunking_with_japanese_characters() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Japanese characters are 3 bytes each in UTF-8
         // Create a string that will test chunking at UTF-8 boundaries
+        // Note: MockCredentialStore doesn't implement chunking, but can still handle UTF-8
         let japanese = "あ".repeat(400); // 400 * 3 = 1200 bytes, requires chunking
 
         let tokens = AuthTokens {
@@ -1059,14 +1046,14 @@ mod tests {
             session_state: "session".to_string(),
         };
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(
             store_result.is_ok(),
             "Failed to store Japanese tokens: {:?}",
             store_result.err()
         );
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(
             loaded.is_ok(),
             "Failed to load Japanese tokens: {:?}",
@@ -1076,26 +1063,23 @@ mod tests {
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token, japanese);
         assert_eq!(loaded_tokens.access_token.chars().count(), 400);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_delete_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Store some tokens first
         let tokens = create_test_tokens(500);
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(store_result.is_ok());
 
         // Verify they're stored
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(loaded.is_ok());
 
         // Delete tokens
-        let delete_result = delete_tokens_default();
+        let delete_result = delete_tokens(&store);
         assert!(
             delete_result.is_ok(),
             "Failed to delete tokens: {:?}",
@@ -1103,27 +1087,26 @@ mod tests {
         );
 
         // Verify they're gone
-        let loaded_after_delete = load_tokens_default();
+        let loaded_after_delete = load_tokens(&store);
         assert!(
             loaded_after_delete.is_err(),
             "Tokens should not exist after deletion"
         );
-
-        cleanup_test_tokens();
+        assert!(!store.contains_key("auth.access_token"));
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_delete_chunked_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Store large tokens that require chunking
+        // Note: MockCredentialStore doesn't implement chunking, but can still store large tokens
         let tokens = create_test_tokens(2500);
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(store_result.is_ok());
 
         // Delete tokens (should delete all chunks)
-        let delete_result = delete_tokens_default();
+        let delete_result = delete_tokens(&store);
         assert!(
             delete_result.is_ok(),
             "Failed to delete chunked tokens: {:?}",
@@ -1131,47 +1114,39 @@ mod tests {
         );
 
         // Verify they're gone
-        let loaded_after_delete = load_tokens_default();
+        let loaded_after_delete = load_tokens(&store);
         assert!(
             loaded_after_delete.is_err(),
             "Chunked tokens should not exist after deletion"
         );
-
-        cleanup_test_tokens();
+        assert!(!store.contains_key("auth.access_token"));
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_delete_nonexistent_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Deleting tokens that don't exist should not error
-        let delete_result = delete_tokens_default();
+        let delete_result = delete_tokens(&store);
         assert!(
             delete_result.is_ok(),
             "Deleting nonexistent tokens should succeed: {:?}",
             delete_result.err()
         );
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_load_nonexistent_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Loading tokens when none exist should return an error
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(loaded.is_err(), "Loading nonexistent tokens should fail");
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_expires_at_field_storage() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Test that numeric expires_at field is stored and loaded correctly
         let tokens = AuthTokens {
@@ -1182,42 +1157,37 @@ mod tests {
             session_state: "test_session".to_string(),
         };
 
-        let store_result = store_tokens_default(&tokens);
+        let store_result = store_tokens(&store, &tokens);
         assert!(store_result.is_ok());
 
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(loaded.is_ok());
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.expires_at, 1234567890);
-
-        cleanup_test_tokens();
     }
 
     #[test]
-    #[ignore] // Requires system keyring
     fn test_overwrite_existing_tokens() {
-        cleanup_test_tokens();
+        let store = MockCredentialStore::new();
 
         // Store first set of tokens
         let tokens1 = create_test_tokens(500);
-        let store_result1 = store_tokens_default(&tokens1);
+        let store_result1 = store_tokens(&store, &tokens1);
         assert!(store_result1.is_ok());
 
         // Overwrite with different tokens
         let tokens2 = create_test_tokens(1500); // Different size requiring chunking
-        let store_result2 = store_tokens_default(&tokens2);
+        let store_result2 = store_tokens(&store, &tokens2);
         assert!(store_result2.is_ok());
 
         // Load and verify we get the second set
-        let loaded = load_tokens_default();
+        let loaded = load_tokens(&store);
         assert!(loaded.is_ok());
 
         let loaded_tokens = loaded.unwrap();
         assert_eq!(loaded_tokens.access_token.len(), 1500);
         assert_eq!(loaded_tokens.access_token, tokens2.access_token);
-
-        cleanup_test_tokens();
     }
 
     // ========== Tests for Token Refresh and Validation ==========
@@ -1235,7 +1205,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Requires system keyring
+    #[ignore] // Note: This test requires system keyring as get_valid_access_token() uses load_tokens_default()
     async fn test_get_valid_access_token_valid_token() {
         cleanup_test_tokens();
 
