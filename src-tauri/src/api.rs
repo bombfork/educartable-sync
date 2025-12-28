@@ -51,6 +51,65 @@ pub trait HttpClient: Send + Sync {
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>>;
 }
 
+/// Implementation of HttpClient using reqwest
+#[allow(dead_code)]
+pub struct ReqwestHttpClient {
+    client: Client,
+}
+
+#[allow(dead_code)]
+impl ReqwestHttpClient {
+    /// Create a new ReqwestHttpClient with a default reqwest::Client
+    pub fn new() -> Self {
+        Self {
+            client: Client::new(),
+        }
+    }
+
+    /// Create a new ReqwestHttpClient with an existing reqwest::Client
+    pub fn with_client(client: Client) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl HttpClient for ReqwestHttpClient {
+    async fn get(
+        &self,
+        url: &str,
+        headers: Vec<(&str, &str)>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+        // Build the request with headers
+        let mut request_builder = self.client.get(url);
+        for (key, value) in headers {
+            request_builder = request_builder.header(key, value);
+        }
+
+        // Send the request
+        let response = request_builder.send().await?;
+
+        // Extract status code
+        let status = response.status().as_u16();
+
+        // Extract headers and convert to HashMap<String, String>
+        let mut response_headers = HashMap::new();
+        for (name, value) in response.headers().iter() {
+            let header_name = name.as_str().to_string();
+            let header_value = value.to_str().unwrap_or("").to_string();
+            response_headers.insert(header_name, header_value);
+        }
+
+        // Extract body as Vec<u8>
+        let body = response.bytes().await?.to_vec();
+
+        Ok(HttpResponse {
+            status,
+            headers: response_headers,
+            body,
+        })
+    }
+}
+
 pub struct EducartableClient {
     client: Client,
 }
