@@ -1,8 +1,55 @@
 // API client for Educartable endpoints
 use crate::auth;
 use crate::models::{ActivitiesResponse, Activity, UserInfo, UserInfoResponse};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde::Deserialize;
+use std::collections::HashMap;
+
+/// Simple HTTP response abstraction
+#[allow(dead_code)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    pub body: Vec<u8>,
+}
+
+#[allow(dead_code)]
+impl HttpResponse {
+    /// Parse the response body as JSON
+    pub fn json<T: for<'de> Deserialize<'de>>(
+        &self,
+    ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
+        serde_json::from_slice(&self.body).map_err(|e| e.into())
+    }
+
+    /// Convert the response body to a UTF-8 string
+    pub fn text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        String::from_utf8(self.body.clone()).map_err(|e| e.into())
+    }
+
+    /// Check if the response status indicates success (2xx)
+    pub fn is_success(&self) -> bool {
+        self.status >= 200 && self.status < 300
+    }
+
+    /// Check if the response status indicates a redirection (3xx)
+    pub fn is_redirection(&self) -> bool {
+        self.status >= 300 && self.status < 400
+    }
+}
+
+/// Trait for abstracting HTTP client operations
+#[allow(dead_code)]
+#[async_trait]
+pub trait HttpClient: Send + Sync {
+    /// Perform a GET request with headers
+    async fn get(
+        &self,
+        url: &str,
+        headers: Vec<(&str, &str)>,
+    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>>;
+}
 
 pub struct EducartableClient {
     client: Client,
@@ -186,6 +233,136 @@ mod tests {
         let client = EducartableClient::new();
         // Verify the client struct exists (compilation test)
         drop(client);
+    }
+
+    // ========== HttpResponse Tests ==========
+
+    #[test]
+    fn test_http_response_json() {
+        let json_body = r#"{"id": 123, "name": "test"}"#;
+        let response = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: json_body.as_bytes().to_vec(),
+        };
+
+        #[derive(Deserialize, Debug, PartialEq)]
+        struct TestData {
+            id: i32,
+            name: String,
+        }
+
+        let parsed: TestData = response.json().unwrap();
+        assert_eq!(parsed.id, 123);
+        assert_eq!(parsed.name, "test");
+    }
+
+    #[test]
+    fn test_http_response_text() {
+        let text_body = "Hello, World!";
+        let response = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: text_body.as_bytes().to_vec(),
+        };
+
+        let text = response.text().unwrap();
+        assert_eq!(text, "Hello, World!");
+    }
+
+    #[test]
+    fn test_http_response_is_success() {
+        let response_200 = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(response_200.is_success());
+
+        let response_201 = HttpResponse {
+            status: 201,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(response_201.is_success());
+
+        let response_299 = HttpResponse {
+            status: 299,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(response_299.is_success());
+
+        let response_404 = HttpResponse {
+            status: 404,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(!response_404.is_success());
+    }
+
+    #[test]
+    fn test_http_response_is_redirection() {
+        let response_302 = HttpResponse {
+            status: 302,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(response_302.is_redirection());
+
+        let response_301 = HttpResponse {
+            status: 301,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(response_301.is_redirection());
+
+        let response_200 = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(!response_200.is_redirection());
+
+        let response_404 = HttpResponse {
+            status: 404,
+            headers: HashMap::new(),
+            body: Vec::new(),
+        };
+        assert!(!response_404.is_redirection());
+    }
+
+    #[test]
+    fn test_http_response_invalid_json() {
+        let invalid_json = "not valid json";
+        let response = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: invalid_json.as_bytes().to_vec(),
+        };
+
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct TestData {
+            id: i32,
+            name: String,
+        }
+
+        let result: Result<TestData, _> = response.json();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_http_response_invalid_utf8() {
+        let invalid_utf8 = vec![0xff, 0xfe, 0xfd]; // Invalid UTF-8 sequence
+        let response = HttpResponse {
+            status: 200,
+            headers: HashMap::new(),
+            body: invalid_utf8,
+        };
+
+        let result = response.text();
+        assert!(result.is_err());
     }
 
     // ========== URL Construction Tests ==========
