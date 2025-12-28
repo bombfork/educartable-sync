@@ -8,7 +8,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder, Wry};
 
 /// Trait for storing, loading, and deleting credentials
-#[allow(dead_code)] // Trait will be implemented in subsequent issues
+#[allow(dead_code)] // Will be used in issue #79
 pub trait CredentialStore: Send + Sync {
     /// Store a credential with the given key and value
     fn store(&self, key: &str, value: &str) -> Result<(), String>;
@@ -18,6 +18,333 @@ pub trait CredentialStore: Send + Sync {
 
     /// Delete a credential by key
     fn delete(&self, key: &str) -> Result<(), String>;
+}
+
+/// KeyringCredentialStore - stores credentials using the system keyring
+#[allow(dead_code)] // Will be used in issue #79
+pub struct KeyringCredentialStore {
+    service_name: String,
+    username_prefix: String,
+}
+
+impl KeyringCredentialStore {
+    /// Create a new KeyringCredentialStore with default service and username prefix
+    #[allow(dead_code)] // Will be used in issue #79
+    pub fn new() -> Self {
+        Self {
+            service_name: SERVICE_NAME.to_string(),
+            username_prefix: USERNAME_PREFIX.to_string(),
+        }
+    }
+}
+
+impl CredentialStore for KeyringCredentialStore {
+    fn store(&self, key: &str, value: &str) -> Result<(), String> {
+        let value_bytes = value.len(); // UTF-8 byte length
+        let value_chars = value.chars().count(); // Character count
+
+        log::info!(
+            "Storing token field '{}' (length: {} chars, {} bytes)",
+            key,
+            value_chars,
+            value_bytes
+        );
+
+        if value_bytes <= SAFE_CHUNK_SIZE_BYTES {
+            // Field fits in single entry, store directly
+            let username = format!("{}.{}", self.username_prefix, key);
+            let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+                log::error!("Keyring entry creation failed for '{}': {}", key, e);
+                format!(
+                    "Cannot access system keyring for '{}'. Please check your system permissions.",
+                    key
+                )
+            })?;
+
+            entry.set_password(value).map_err(|e| {
+                log::error!(
+                    "Failed to store '{}' ({} chars, {} bytes) in keyring: {}",
+                    key,
+                    value_chars,
+                    value_bytes,
+                    e
+                );
+                format!(
+                    "Cannot save '{}' credential ({} chars, {} bytes). Error: {}",
+                    key, value_chars, value_bytes, e
+                )
+            })?;
+
+            log::debug!(
+                "Token field '{}' stored successfully ({} chars, {} bytes, single entry)",
+                key,
+                value_chars,
+                value_bytes
+            );
+        } else {
+            // Field needs to be chunked based on byte size
+            let mut chunks = Vec::new();
+            let mut current_byte_pos = 0;
+
+            while current_byte_pos < value_bytes {
+                let remaining = &value[current_byte_pos..];
+                let remaining_bytes = remaining.len();
+
+                let chunk_end_bytes = if remaining_bytes <= SAFE_CHUNK_SIZE_BYTES {
+                    remaining_bytes
+                } else {
+                    // Find a valid UTF-8 character boundary at or before SAFE_CHUNK_SIZE_BYTES
+                    let mut byte_pos = SAFE_CHUNK_SIZE_BYTES.min(remaining_bytes);
+
+                    // Walk backwards to find a valid UTF-8 boundary
+                    while byte_pos > 0 && !remaining.is_char_boundary(byte_pos) {
+                        byte_pos -= 1;
+                    }
+
+                    if byte_pos == 0 {
+                        // Shouldn't happen with reasonable input, but fall back to a safe value
+                        log::warn!("Could not find UTF-8 boundary, using fallback");
+                        SAFE_CHUNK_SIZE_BYTES / 2
+                    } else {
+                        byte_pos
+                    }
+                };
+
+                chunks.push(&remaining[..chunk_end_bytes]);
+                current_byte_pos += chunk_end_bytes;
+            }
+
+            let chunk_count = chunks.len();
+
+            log::debug!(
+                "Token field '{}' is {} bytes ({} chars), splitting into {} chunks of max {} bytes each",
+                key, value_bytes, value_chars, chunk_count, SAFE_CHUNK_SIZE_BYTES
+            );
+
+            // Store metadata entry with chunk count (with prefix to avoid confusion with numeric data)
+            let username = format!("{}.{}", self.username_prefix, key);
+            let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+                log::error!(
+                    "Keyring metadata entry creation failed for '{}': {}",
+                    key,
+                    e
+                );
+                format!("Cannot access system keyring for '{}'.", key)
+            })?;
+
+            // Use "CHUNKS:" prefix to distinguish metadata from numeric data (e.g., timestamps)
+            let metadata = format!("CHUNKS:{}", chunk_count);
+            entry.set_password(&metadata).map_err(|e| {
+                log::error!("Failed to store '{}' metadata in keyring: {}", key, e);
+                format!("Cannot save '{}' metadata.", key)
+            })?;
+
+            log::debug!(
+                "Token field '{}' metadata stored: {} chunks",
+                key,
+                chunk_count
+            );
+
+            // Store each chunk
+            for (index, chunk) in chunks.iter().enumerate() {
+                let chunk_index = index + 1; // 1-based indexing
+                let chunk_bytes = chunk.len();
+                let chunk_chars = chunk.chars().count();
+
+                let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
+                let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+                    log::error!(
+                        "Keyring entry creation failed for '{}' chunk {}: {}",
+                        key,
+                        chunk_index,
+                        e
+                    );
+                    format!(
+                        "Cannot access system keyring for '{}' chunk {}.",
+                        key, chunk_index
+                    )
+                })?;
+
+                entry.set_password(chunk).map_err(|e| {
+                    log::error!(
+                        "Failed to store '{}' chunk {} ({} chars, {} bytes) in keyring: {}",
+                        key,
+                        chunk_index,
+                        chunk_chars,
+                        chunk_bytes,
+                        e
+                    );
+                    format!(
+                        "Cannot save '{}' chunk {} ({} chars, {} bytes). Error: {}",
+                        key, chunk_index, chunk_chars, chunk_bytes, e
+                    )
+                })?;
+
+                log::debug!(
+                    "Token field '{}' chunk {}/{} stored successfully ({} chars, {} bytes)",
+                    key,
+                    chunk_index,
+                    chunk_count,
+                    chunk_chars,
+                    chunk_bytes
+                );
+            }
+
+            log::info!(
+                "Token field '{}' stored successfully ({} chars, {} bytes in {} chunks)",
+                key,
+                value_chars,
+                value_bytes,
+                chunk_count
+            );
+        }
+
+        Ok(())
+    }
+
+    fn load(&self, key: &str) -> Result<String, String> {
+        let username = format!("{}.{}", self.username_prefix, key);
+        let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+            log::error!("Keyring entry creation failed for '{}': {}", key, e);
+            "Cannot access system keyring. Please check your system permissions.".to_string()
+        })?;
+
+        let value = entry.get_password().map_err(|e| {
+            log::warn!("Failed to load '{}' from keyring: {}", key, e);
+            format!(
+                "Not authenticated. Missing token field '{}'. Please log in first.",
+                key
+            )
+        })?;
+
+        // Check if this is metadata (chunk count) or actual data
+        // Metadata has "CHUNKS:" prefix to avoid confusion with numeric data
+        if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
+            let chunk_count = chunk_count_str.parse::<usize>().map_err(|e| {
+                log::error!("Failed to parse chunk count for '{}': {}", key, e);
+                format!("Corrupted metadata for '{}'. Please log in again.", key)
+            })?;
+
+            // This is chunked data, load all chunks
+            log::debug!(
+                "Token field '{}' is chunked, loading {} chunks",
+                key,
+                chunk_count
+            );
+
+            let mut chunks = Vec::with_capacity(chunk_count);
+
+            for chunk_index in 1..=chunk_count {
+                let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
+                let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+                    log::error!(
+                        "Keyring entry creation failed for '{}' chunk {}: {}",
+                        key,
+                        chunk_index,
+                        e
+                    );
+                    "Cannot access system keyring.".to_string()
+                })?;
+
+                let chunk = entry.get_password().map_err(|e| {
+                    log::error!(
+                        "Failed to load '{}' chunk {} from keyring: {}",
+                        key,
+                        chunk_index,
+                        e
+                    );
+                    format!(
+                        "Missing '{}' chunk {}. Please log in again.",
+                        key, chunk_index
+                    )
+                })?;
+
+                log::debug!(
+                    "Token field '{}' chunk {}/{} loaded ({} chars)",
+                    key,
+                    chunk_index,
+                    chunk_count,
+                    chunk.len()
+                );
+                chunks.push(chunk);
+            }
+
+            let reassembled = chunks.join("");
+            log::info!(
+                "Token field '{}' loaded successfully ({} chars from {} chunks)",
+                key,
+                reassembled.len(),
+                chunk_count
+            );
+            Ok(reassembled)
+        } else {
+            // Single entry, return as-is
+            log::debug!(
+                "Token field '{}' loaded successfully ({} chars, single entry)",
+                key,
+                value.len()
+            );
+            Ok(value)
+        }
+    }
+
+    fn delete(&self, key: &str) -> Result<(), String> {
+        let username = format!("{}.{}", self.username_prefix, key);
+        let entry = Entry::new(&self.service_name, &username).map_err(|e| {
+            log::error!("Keyring entry creation failed for '{}': {}", key, e);
+            format!("Cannot access system keyring for '{}'.", key)
+        })?;
+
+        // Try to read the entry to check if it's chunked
+        if let Ok(value) = entry.get_password() {
+            // Check for "CHUNKS:" prefix to identify metadata
+            if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
+                if let Ok(chunk_count) = chunk_count_str.parse::<usize>() {
+                    // This is chunked data, delete all chunks
+                    log::debug!(
+                        "Token field '{}' is chunked, deleting {} chunks",
+                        key,
+                        chunk_count
+                    );
+
+                    for chunk_index in 1..=chunk_count {
+                        let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
+                        if let Ok(chunk_entry) = Entry::new(&self.service_name, &username) {
+                            match chunk_entry.delete_password() {
+                                Ok(_) => log::debug!(
+                                    "Token field '{}' chunk {} deleted",
+                                    key,
+                                    chunk_index
+                                ),
+                                Err(e) => log::warn!(
+                                    "Failed to delete '{}' chunk {}: {} (may not exist)",
+                                    key,
+                                    chunk_index,
+                                    e
+                                ),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete the main entry (either metadata or single value)
+        match entry.delete_password() {
+            Ok(_) => {
+                log::debug!("Token field '{}' deleted successfully", key);
+                Ok(())
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to delete '{}' from keyring: {} (may not exist)",
+                    key,
+                    e
+                );
+                Ok(()) // Don't treat as error if entry doesn't exist
+            }
+        }
+    }
 }
 
 // Global state to store tokens during extraction
