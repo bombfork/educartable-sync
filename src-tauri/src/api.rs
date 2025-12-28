@@ -574,7 +574,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if auth::store_tokens(&tokens).is_err() {
+        if auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -602,7 +602,7 @@ mod tests {
         assert_eq!(user_info.name, Some("Test User".to_string()));
 
         // Cleanup
-        let _ = auth::delete_tokens();
+        let _ = auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -618,7 +618,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if auth::store_tokens(&tokens).is_err() {
+        if auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -643,7 +643,7 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens();
+        let _ = auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -665,7 +665,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens(&tokens).is_err() {
+        if crate::auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -713,7 +713,7 @@ mod tests {
         assert_eq!(response.pagination.page_count, 1);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens();
+        let _ = crate::auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -735,7 +735,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens(&tokens).is_err() {
+        if crate::auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -774,7 +774,7 @@ mod tests {
         assert_eq!(response.pagination.count, 0);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens();
+        let _ = crate::auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -796,7 +796,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens(&tokens).is_err() {
+        if crate::auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -824,7 +824,7 @@ mod tests {
         );
 
         // Cleanup
-        let _ = crate::auth::delete_tokens();
+        let _ = crate::auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -840,7 +840,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if auth::store_tokens(&tokens).is_err() {
+        if auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -868,7 +868,7 @@ mod tests {
         assert_eq!(signed_url, "https://signed-url.com/media.jpg");
 
         // Cleanup
-        let _ = auth::delete_tokens();
+        let _ = auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -884,7 +884,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if auth::store_tokens(&tokens).is_err() {
+        if auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -911,7 +911,7 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens();
+        let _ = auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -927,7 +927,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if auth::store_tokens(&tokens).is_err() {
+        if auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -950,7 +950,7 @@ mod tests {
         );
 
         // Cleanup
-        let _ = auth::delete_tokens();
+        let _ = auth::delete_tokens_default();
     }
 
     #[tokio::test]
@@ -972,7 +972,7 @@ mod tests {
         };
 
         // Store tokens - if this fails, skip the test
-        if crate::auth::store_tokens(&tokens).is_err() {
+        if crate::auth::store_tokens_default(&tokens).is_err() {
             eprintln!("Skipping test: unable to access system keyring");
             return;
         }
@@ -1076,7 +1076,7 @@ mod tests {
         assert_eq!(activities[2].pupils, vec![1, 2, 3]);
 
         // Cleanup
-        let _ = crate::auth::delete_tokens();
+        let _ = crate::auth::delete_tokens_default();
     }
 
     // ========== Request Header Tests ==========
