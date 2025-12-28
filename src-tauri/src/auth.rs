@@ -814,10 +814,6 @@ mod tests {
             }
         }
 
-        pub fn clear(&self) {
-            self.storage.lock().unwrap().clear();
-        }
-
         pub fn contains_key(&self, key: &str) -> bool {
             self.storage.lock().unwrap().contains_key(key)
         }
