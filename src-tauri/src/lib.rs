@@ -7,12 +7,6 @@ mod updater;
 
 use tauri::Manager;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 /// Open the logs directory in the system file explorer
 #[tauri::command]
 async fn open_logs_directory(app: tauri::AppHandle) -> Result<(), String> {
@@ -75,7 +69,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            greet,
             auth::authenticate,
             auth::submit_tokens,
             auth::logout,
@@ -90,27 +83,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_greet() {
-        let result = greet("World");
-        assert_eq!(result, "Hello, World! You've been greeted from Rust!");
-    }
-
-    #[test]
-    fn test_greet_with_empty_string() {
-        let result = greet("");
-        assert_eq!(result, "Hello, ! You've been greeted from Rust!");
-    }
-
-    #[test]
-    fn test_greet_with_special_characters() {
-        let result = greet("Rust 🦀");
-        assert_eq!(result, "Hello, Rust 🦀! You've been greeted from Rust!");
-    }
 }
