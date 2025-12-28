@@ -7,6 +7,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder, Wry};
 
+/// Trait for storing, loading, and deleting credentials
+#[allow(dead_code)] // Trait will be implemented in subsequent issues
+pub trait CredentialStore: Send + Sync {
+    /// Store a credential with the given key and value
+    fn store(&self, key: &str, value: &str) -> Result<(), String>;
+
+    /// Load a credential by key
+    fn load(&self, key: &str) -> Result<String, String>;
+
+    /// Delete a credential by key
+    fn delete(&self, key: &str) -> Result<(), String>;
+}
+
 // Global state to store tokens during extraction
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 
