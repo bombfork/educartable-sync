@@ -704,14 +704,6 @@ pub async fn refresh_access_token(
     Ok(tokens)
 }
 
-/// Refresh access token using the refresh token with the default KeyringCredentialStore
-/// Returns new AuthTokens with updated access_token, refresh_token, and expires_at
-#[allow(dead_code)]
-pub async fn refresh_access_token_default(refresh_token: &str) -> Result<AuthTokens, String> {
-    let store = KeyringCredentialStore::new();
-    refresh_access_token(&store, refresh_token).await
-}
-
 /// Get valid access token, refreshing if necessary
 /// This function should be used by API client to ensure tokens are always valid
 pub async fn get_valid_access_token(store: &dyn CredentialStore) -> Result<String, String> {
@@ -736,13 +728,6 @@ pub async fn get_valid_access_token(store: &dyn CredentialStore) -> Result<Strin
         log::debug!("Access token is still valid");
         Ok(tokens.access_token)
     }
-}
-
-/// Get valid access token with the default KeyringCredentialStore
-#[allow(dead_code)]
-pub async fn get_valid_access_token_default() -> Result<String, String> {
-    let store = KeyringCredentialStore::new();
-    get_valid_access_token(&store).await
 }
 
 /// Check if the user is authenticated (has valid tokens that can be refreshed)
