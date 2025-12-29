@@ -93,15 +93,56 @@ echo "✓ Updated Cargo.lock"
 
 # Git operations
 echo ""
+echo "Creating release branch..."
+git switch -c "release/v$NEW_VERSION"
+echo "✓ Created and switched to branch release/v$NEW_VERSION"
 echo "Committing changes..."
 git add src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
 git commit -m "chore: bump version to $NEW_VERSION"
 echo "✓ Committed version bump"
 
-echo "Pushing to main..."
-git push origin main
-echo "✓ Pushed to main"
+echo "Pushing to origin..."
+git push --set-upstream origin "release/v$NEW_VERSION"
+echo "✓ Pushed release branch to origin"
 
+echo ""
+echo "Creating Pull Request..."
+gh pr create --title "chore: release v$NEW_VERSION" --body "This PR prepares the release v$NEW_VERSION." --base main
+echo "✓ Created Pull Request"
+
+echo ""
+echo "Adding label 'ready-for-tests' to PR..."
+PR_NUMBER=$(gh pr view --json number --jq '.number')
+gh pr edit "$PR_NUMBER" --add-label "ready-for-tests"
+echo "✓ Added label to PR"
+
+echo ""
+echo "Enabling auto-merge for PR..."
+gh pr merge "$PR_NUMBER" --auto --squash
+echo "✓ Enabled auto-merge for PR"
+
+echo ""
+echo "Waiting for PR to be merged..."
+while true; do
+  STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
+  if [ "$STATE" = "MERGED" ]; then
+    break
+  fi
+  echo "PR not merged yet. Checking again in 15 seconds..."
+  sleep 15
+done
+echo "✓ PR merged"
+
+echo ""
+echo "Switching back to main branch..."
+git switch main
+echo "✓ Switched to main branch"
+
+echo "Pulling latest changes..."
+git pull origin main
+echo "✓ Pulled latest changes"
+
+echo ""
 echo "Creating tag v$NEW_VERSION..."
 git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
 echo "✓ Created tag v$NEW_VERSION"
@@ -113,5 +154,5 @@ echo "✓ Pushed tag v$NEW_VERSION"
 echo ""
 echo "🎉 Release v$NEW_VERSION created successfully!"
 echo "📦 GitHub Actions will now build and publish the release."
-echo "🔗 Check progress at: https://github.com/bombfork/educartable-sync/actions"
+echo "🔗 Check progress at: https://github.com/bombfork/educartable-sync/actions/workflows/release.yml"
 """
