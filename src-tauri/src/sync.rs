@@ -15,20 +15,20 @@ pub async fn download_file(
     url: &str,
     destination: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    log::debug!("Downloading file to {:?}", destination);
+    log::debug!("Downloading file to {}", destination.display());
 
     let client = Client::new();
     let response = client.get(url).send().await?;
 
     let status = response.status();
     if !status.is_success() {
-        log::error!("Download failed with status: {}", status);
-        return Err(format!("Download failed with status: {}", status).into());
+        log::error!("Download failed with status: {status}");
+        return Err(format!("Download failed with status: {status}").into());
     }
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = destination.parent() {
-        log::debug!("Creating directory: {:?}", parent);
+        log::debug!("Creating directory: {}", parent.display());
         tokio::fs::create_dir_all(parent).await?;
     }
 
@@ -38,7 +38,7 @@ pub async fn download_file(
     let size = bytes.len();
     file.write_all(&bytes).await?;
 
-    log::debug!("Downloaded {} bytes to {:?}", size, destination);
+    log::debug!("Downloaded {size} bytes to {}", destination.display());
     Ok(())
 }
 
@@ -51,7 +51,7 @@ pub fn get_activity_folder(sync_path: &Path, activity: &Activity) -> PathBuf {
     let safe_title = sanitize_filename(&activity.title);
 
     // Create folder name
-    let folder_name = format!("{}_{}", date, safe_title);
+    let folder_name = format!("{date}_{safe_title}");
 
     sync_path.join(folder_name)
 }
@@ -88,9 +88,9 @@ pub async fn save_article_markdown(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let folder = get_activity_folder(sync_path, activity);
     log::debug!(
-        "Saving article markdown for activity {} to {:?}",
+        "Saving article markdown for activity {} to {}",
         activity.id,
-        folder
+        folder.display()
     );
 
     // Create directory if it doesn't exist
@@ -105,7 +105,7 @@ pub async fn save_article_markdown(
     let mut file = File::create(&article_path).await?;
     file.write_all(markdown_content.as_bytes()).await?;
 
-    log::debug!("Article saved to {:?}", article_path);
+    log::debug!("Article saved to {}", article_path.display());
     Ok(())
 }
 
@@ -126,7 +126,7 @@ pub async fn should_download_file(
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if file exists
     if !path.exists() {
-        log::debug!("File does not exist, will download: {:?}", path);
+        log::debug!("File does not exist, will download: {}", path.display());
         return Ok(true);
     }
 
@@ -136,18 +136,20 @@ pub async fn should_download_file(
 
     // File exists - check if it seems valid (not empty and not suspiciously small)
     if actual_size == 0 {
-        log::warn!("File exists but is empty, will re-download: {:?}", path);
+        log::warn!(
+            "File exists but is empty, will re-download: {}",
+            path.display()
+        );
         return Ok(true);
     }
 
     // If file is significantly smaller than expected (less than 50%), it might be corrupted
+    #[allow(clippy::cast_precision_loss)]
     let size_ratio = actual_size as f64 / expected_size as f64;
     if size_ratio < 0.5 {
         log::warn!(
-            "File exists but is suspiciously small ({} bytes, expected {}), will re-download: {:?}",
-            actual_size,
-            expected_size,
-            path
+            "File exists but is suspiciously small ({actual_size} bytes, expected {expected_size}), will re-download: {}",
+            path.display()
         );
         return Ok(true);
     }
@@ -156,10 +158,8 @@ pub async fn should_download_file(
     // Note: API size is often inaccurate (reports uncompressed size while CDN serves compressed),
     // so we don't do exact size matching
     log::debug!(
-        "File already exists ({} bytes, API reports {} bytes), skipping: {:?}",
-        actual_size,
-        expected_size,
-        path
+        "File already exists ({actual_size} bytes, API reports {expected_size} bytes), skipping: {}",
+        path.display()
     );
     Ok(false)
 }
@@ -171,45 +171,39 @@ pub async fn download_with_retry(
     max_retries: u32,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut attempt = 0;
-    log::debug!("Starting download with retry for {:?}", destination);
+    log::debug!("Starting download with retry for {}", destination.display());
 
     loop {
         attempt += 1;
 
         match download_file(url, destination).await {
-            Ok(_) => {
+            Ok(()) => {
                 log::debug!(
-                    "Download successful on attempt {} for {:?}",
-                    attempt,
-                    destination
+                    "Download successful on attempt {attempt} for {}",
+                    destination.display()
                 );
                 return Ok(());
             }
             Err(e) => {
                 if attempt >= max_retries {
                     log::error!(
-                        "Download failed after {} attempts for {:?}: {}",
-                        attempt,
-                        destination,
-                        e
+                        "Download failed after {attempt} attempts for {}: {e}",
+                        destination.display()
                     );
-                    return Err(format!("Failed after {} attempts: {}", attempt, e).into());
+                    return Err(format!("Failed after {attempt} attempts: {e}").into());
                 }
 
                 // Check if error is retryable
                 if !is_retryable_error(e.as_ref()) {
-                    log::error!("Non-retryable error for {:?}: {}", destination, e);
+                    log::error!("Non-retryable error for {}: {e}", destination.display());
                     return Err(e);
                 }
 
                 // Exponential backoff: 2^attempt seconds
                 let wait_time = 2_u64.pow(attempt);
                 log::warn!(
-                    "Download attempt {} failed for {:?}, retrying in {}s: {}",
-                    attempt,
-                    destination,
-                    wait_time,
-                    e
+                    "Download attempt {attempt} failed for {}, retrying in {wait_time}s: {e}",
+                    destination.display()
                 );
                 sleep(Duration::from_secs(wait_time)).await;
             }
@@ -242,7 +236,10 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
         api_client: EducartableClient<H>,
         sync_path: PathBuf,
     ) -> Self {
-        log::debug!("Creating SyncEngine with sync_path: {:?}", sync_path);
+        log::debug!(
+            "Creating SyncEngine with sync_path: {}",
+            sync_path.display()
+        );
         Self {
             app_handle,
             api_client,
@@ -251,6 +248,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
     }
 
     fn emit_progress(&self, current: u32, total: u32, filename: String) {
+        #[allow(clippy::cast_precision_loss)]
         let percentage = if total > 0 {
             (current as f32 / total as f32) * 100.0
         } else {
@@ -277,7 +275,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
         // Get parent ID
         log::info!("Fetching parent ID");
         let parent_id = self.api_client.get_parent_id().await.map_err(|e| {
-            log::error!("Failed to get user info: {}", e);
+            log::error!("Failed to get user info: {e}");
             "Cannot access your account information. Please check your connection.".to_string()
         })?;
 
@@ -289,17 +287,21 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
             .fetch_all_activities(parent_id)
             .await
             .map_err(|e| {
-                log::error!("Failed to fetch activities: {}", e);
+                log::error!("Failed to fetch activities: {e}");
                 "Cannot load activities from Educartable. Please check your connection.".to_string()
             })?;
 
-        stats.total_activities = activities.len() as u32;
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            stats.total_activities = activities.len() as u32;
+        }
         log::info!("Found {} activities to process", stats.total_activities);
 
         // Count total media files
+        #[allow(clippy::cast_possible_truncation)]
         let total_media: u32 = activities.iter().map(|a| a.medias.len() as u32).sum();
         stats.total_media = total_media;
-        log::info!("Found {} total media files to sync", total_media);
+        log::info!("Found {total_media} total media files to sync");
 
         let mut processed_media = 0u32;
 
@@ -318,12 +320,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
 
                 // Prepare filename for progress display
                 let filename = format!("{}{}", media.name, media.extension);
-                log::debug!(
-                    "Processing media {}/{}: {}",
-                    processed_media,
-                    total_media,
-                    filename
-                );
+                log::debug!("Processing media {processed_media}/{total_media}: {filename}");
                 self.emit_progress(processed_media, total_media, filename.clone());
 
                 // Get destination path
@@ -338,7 +335,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
                 match should_download_file(&destination, media.size).await {
                     Ok(true) => {
                         // File needs downloading
-                        log::info!("Downloading: {}", filename);
+                        log::info!("Downloading: {filename}");
                         match self
                             .api_client
                             .get_signed_media_url(&media.id, &filename)
@@ -347,7 +344,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
                             Ok(signed_url) => {
                                 // Download with retry
                                 match download_with_retry(&signed_url, &destination, 3).await {
-                                    Ok(_) => {
+                                    Ok(()) => {
                                         // Verify downloaded file size
                                         if let Ok(metadata) =
                                             tokio::fs::metadata(&destination).await
@@ -355,29 +352,29 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
                                             log::info!("Successfully downloaded: {} ({} bytes, expected {} bytes)",
                                                 filename, metadata.len(), media.size);
                                         } else {
-                                            log::info!("Successfully downloaded: {}", filename);
+                                            log::info!("Successfully downloaded: {filename}");
                                         }
                                         stats.downloaded += 1;
                                     }
                                     Err(e) => {
-                                        log::error!("Failed to download {}: {}", filename, e);
+                                        log::error!("Failed to download {filename}: {e}");
                                         stats.failed += 1;
                                     }
                                 }
                             }
                             Err(e) => {
-                                log::error!("Failed to get signed URL for {}: {}", filename, e);
+                                log::error!("Failed to get signed URL for {filename}: {e}");
                                 stats.failed += 1;
                             }
                         }
                     }
                     Ok(false) => {
                         // File already exists and is complete
-                        log::debug!("Skipping existing file: {}", filename);
+                        log::debug!("Skipping existing file: {filename}");
                         stats.skipped += 1;
                     }
                     Err(e) => {
-                        log::error!("Failed to check file status for {}: {}", filename, e);
+                        log::error!("Failed to check file status for {filename}: {e}");
                         stats.failed += 1;
                     }
                 }
@@ -397,6 +394,29 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
     }
 }
 
+/// Starts synchronization of media files from Educartable.
+///
+/// Fetches all activities for the authenticated user, then downloads
+/// any new or updated media files to the configured sync directory.
+/// Emits `sync-progress` events to update the frontend UI during sync.
+/// Articles are saved as markdown files alongside media files.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for emitting progress events
+/// * `config` - Application configuration containing sync directory path
+///
+/// # Returns
+/// - `Ok(SyncStats)` - Sync completed with download statistics
+/// - `Err(String)` - Sync failed with user-friendly error message
+///
+/// # Events Emitted
+/// - `sync-progress` - Progress updates during sync (current/total files, percentage, current filename)
+///
+/// # Errors
+/// - User not authenticated
+/// - Sync directory not configured
+/// - Network errors fetching activities or media
+/// - File system errors creating directories or downloading files
 // Issue #34: Tauri command for starting sync
 #[tauri::command]
 pub async fn start_sync(
@@ -408,7 +428,7 @@ pub async fn start_sync(
     // Verify authentication (this will also attempt token refresh if needed)
     log::debug!("Verifying authentication");
     crate::auth::load_tokens_default().map_err(|e| {
-        log::error!("Not authenticated: {}", e);
+        log::error!("Not authenticated: {e}");
         e // Pass through the user-friendly message from auth module
     })?;
 
@@ -418,11 +438,11 @@ pub async fn start_sync(
         return Err("Sync directory not configured. Please select a folder first.".to_string());
     }
 
-    log::info!("Sync directory: {:?}", config.sync_path);
+    log::info!("Sync directory: {}", config.sync_path.display());
 
     // Create API client with no-redirect policy for signed URL retrieval
     let api_client = EducartableClient::new_no_redirect()
-        .map_err(|e| format!("Failed to create API client: {}", e))?;
+        .map_err(|e| format!("Failed to create API client: {e}"))?;
 
     // Create sync engine
     let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
@@ -430,13 +450,13 @@ pub async fn start_sync(
     // Run synchronization
     log::info!("Starting synchronization");
     let result = sync_engine.sync_all().await.map_err(|e| {
-        log::error!("Sync failed: {}", e);
+        log::error!("Sync failed: {e}");
         e.to_string()
     });
 
     match &result {
-        Ok(stats) => log::info!("Sync completed successfully: {:?}", stats),
-        Err(e) => log::error!("Sync failed: {}", e),
+        Ok(stats) => log::info!("Sync completed successfully: {stats:?}"),
+        Err(e) => log::error!("Sync failed: {e}"),
     }
 
     result

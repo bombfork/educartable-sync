@@ -42,3 +42,26 @@ mockito = "1.5"
 rstest = "0.18"
 tempfile = "3"
 
+[lints.rust]
+# Warn on missing docs for public items (optional, can be strict)
+# missing_docs = "warn"
+
+[lints.clippy]
+# Pedantic lints for better code quality
+pedantic = { level = "warn", priority = -1 }
+
+# Allow some pedantic lints that are too noisy for this codebase
+module_name_repetitions = "allow"  # e.g., auth::AuthTokens is fine
+too_many_lines = "allow"           # Some functions are necessarily long
+missing_errors_doc = "allow"       # Tauri commands have string errors
+missing_panics_doc = "allow"       # We avoid panics anyway
+
+# Security-related lints
+unwrap_used = "warn"               # Prefer expect() or ? operator
+expect_used = "warn"               # Consider proper error handling
+
+# Code quality
+clone_on_ref_ptr = "warn"          # Avoid unnecessary Arc clones
+redundant_clone = "warn"           # Remove unnecessary clones
+inefficient_to_string = "warn"     # Use to_owned() for &str
+

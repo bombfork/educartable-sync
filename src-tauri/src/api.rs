@@ -21,12 +21,12 @@ impl HttpResponse {
     pub fn json<T: for<'de> Deserialize<'de>>(
         &self,
     ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
-        serde_json::from_slice(&self.body).map_err(|e| e.into())
+        serde_json::from_slice(&self.body).map_err(std::convert::Into::into)
     }
 
     /// Convert the response body to a UTF-8 string
     pub fn text(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        String::from_utf8(self.body.clone()).map_err(|e| e.into())
+        String::from_utf8(self.body.clone()).map_err(std::convert::Into::into)
     }
 
     /// Check if the response status indicates success (2xx)
@@ -52,7 +52,7 @@ pub trait HttpClient: Send + Sync {
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-/// Implementation of HttpClient using reqwest
+/// Implementation of `HttpClient` using reqwest
 #[allow(dead_code)]
 pub struct ReqwestHttpClient {
     client: Client,
@@ -60,19 +60,19 @@ pub struct ReqwestHttpClient {
 
 #[allow(dead_code)]
 impl ReqwestHttpClient {
-    /// Create a new ReqwestHttpClient with a default reqwest::Client
+    /// Create a new `ReqwestHttpClient` with a default `reqwest::Client`
     pub fn new() -> Self {
         Self {
             client: Client::new(),
         }
     }
 
-    /// Create a new ReqwestHttpClient with an existing reqwest::Client
+    /// Create a new `ReqwestHttpClient` with an existing `reqwest::Client`
     pub fn with_client(client: Client) -> Self {
         Self { client }
     }
 
-    /// Create a new ReqwestHttpClient that doesn't follow redirects
+    /// Create a new `ReqwestHttpClient` that doesn't follow redirects
     pub fn new_no_redirect() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -102,7 +102,7 @@ impl HttpClient for ReqwestHttpClient {
 
         // Extract headers and convert to HashMap<String, String>
         let mut response_headers = HashMap::new();
-        for (name, value) in response.headers().iter() {
+        for (name, value) in response.headers() {
             let header_name = name.as_str().to_string();
             let header_value = value.to_str().unwrap_or("").to_string();
             response_headers.insert(header_name, header_value);
@@ -137,14 +137,14 @@ impl<H: HttpClient> EducartableClient<H> {
     async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         auth::get_valid_access_token(self.credential_store.as_ref())
             .await
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
     }
 
     async fn get<T: for<'de> Deserialize<'de>>(
         &self,
         url: &str,
     ) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
-        log::debug!("GET request: {}", url);
+        log::debug!("GET request: {url}");
 
         let access_token = self.get_access_token().await?;
 
@@ -223,15 +223,14 @@ impl<H: HttpClient> EducartableClient<H> {
         &self,
         parent_id: i64,
     ) -> Result<ActivitiesResponse, Box<dyn std::error::Error + Send + Sync>> {
-        log::debug!("Fetching activities for parent {}", parent_id);
+        log::debug!("Fetching activities for parent {parent_id}");
         let url = format!(
-            "https://app.educartable.com/api/1.0/educartable/parent/{}/messages?type=activity&sort=date&direction=desc",
-            parent_id
+            "https://app.educartable.com/api/1.0/educartable/parent/{parent_id}/messages?type=activity&sort=date&direction=desc"
         );
         let result = self.get::<ActivitiesResponse>(&url).await;
         match &result {
             Ok(response) => log::debug!("Fetched {} activities", response.data.len()),
-            Err(e) => log::error!("Failed to fetch activities: {}", e),
+            Err(e) => log::error!("Failed to fetch activities: {e}"),
         }
         result
     }
@@ -240,7 +239,7 @@ impl<H: HttpClient> EducartableClient<H> {
         &self,
         parent_id: i64,
     ) -> Result<Vec<Activity>, Box<dyn std::error::Error + Send + Sync>> {
-        log::info!("Fetching all activities for parent {}", parent_id);
+        log::info!("Fetching all activities for parent {parent_id}");
 
         let response = self.get_activities(parent_id).await?;
         let activities = response.data;
@@ -255,10 +254,9 @@ impl<H: HttpClient> EducartableClient<H> {
         media_id: &str,
         filename: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        log::debug!("Getting signed URL for media: {} ({})", media_id, filename);
+        log::debug!("Getting signed URL for media: {media_id} ({filename})");
         let url = format!(
-            "https://www.edumoov.com/api/1.0/educore/medias/{}/file?cache=1&filename={}",
-            media_id, filename
+            "https://www.edumoov.com/api/1.0/educore/medias/{media_id}/file?cache=1&filename={filename}"
         );
 
         let access_token = self.get_access_token().await?;
@@ -276,9 +274,9 @@ impl<H: HttpClient> EducartableClient<H> {
                 .get("location")
                 .or_else(|| response.headers.get("Location"))
                 .ok_or("No Location header in redirect")?
-                .to_string();
+                .clone();
 
-            log::debug!("Signed URL obtained for {}", filename);
+            log::debug!("Signed URL obtained for {filename}");
             Ok(location)
         } else {
             log::error!(

@@ -117,14 +117,47 @@ main.container {
 
 
 /* ============================================
-   Configuration Elements
+   Configuration Section
    ============================================ */
+
+.config-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+/* Compact button styling */
+.btn-compact {
+    margin: 0;
+    padding: 0.25rem 0.75rem;
+}
+
+.btn-compact-narrow {
+    margin: 0;
+    padding: 0.25rem 0.50rem;
+}
+
+/* Full-width button */
+.btn-full-width {
+    margin: 0;
+    width: 100%;
+    padding: 0.25rem 0.75rem;
+}
 
 /* Compact input field in configuration section */
 input#sync-path {
-    height: 2rem !important;
-    padding: 0.25rem 0.75rem !important;
-    box-sizing: border-box !important;
+    cursor: pointer;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
 }
 
 /* ============================================

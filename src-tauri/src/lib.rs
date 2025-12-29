@@ -7,25 +7,45 @@ mod updater;
 
 use tauri::Manager;
 
-/// Open the logs directory in the system file explorer
+/// Opens the logs directory in the system file explorer.
+///
+/// Locates the application's log directory and opens it in the default
+/// file manager (Finder on macOS, Explorer on Windows, file manager on Linux).
+/// Creates the log directory if it doesn't exist. Useful for accessing
+/// application logs for troubleshooting.
+///
+/// # Arguments
+/// * `app` - Tauri application handle
+///
+/// # Returns
+/// - `Ok(())` - Log directory opened successfully
+/// - `Err(String)` - Failed to open log directory
+///
+/// # Errors
+/// - Cannot determine log directory path
+/// - Failed to create log directory
+/// - Failed to open directory in file explorer
 #[tauri::command]
 async fn open_logs_directory(app: tauri::AppHandle) -> Result<(), String> {
     let log_dir = app
         .path()
         .app_log_dir()
-        .map_err(|e| format!("Failed to get logs directory: {}", e))?;
+        .map_err(|e| format!("Failed to get logs directory: {e}"))?;
 
-    log::info!("Opening logs directory: {:?}", log_dir);
+    log::info!("Opening logs directory: {}", log_dir.display());
 
     // Ensure the directory exists
     if !log_dir.exists() {
         std::fs::create_dir_all(&log_dir)
-            .map_err(|e| format!("Failed to create logs directory: {}", e))?;
+            .map_err(|e| format!("Failed to create logs directory: {e}"))?;
     }
 
     // Open the directory in the system file explorer
-    tauri_plugin_opener::open_path(log_dir.to_str().unwrap(), None::<&str>)
-        .map_err(|e| format!("Failed to open logs directory: {}", e))?;
+    let log_dir_str = log_dir
+        .to_str()
+        .ok_or_else(|| "Log directory path contains invalid UTF-8".to_string())?;
+    tauri_plugin_opener::open_path(log_dir_str, None::<&str>)
+        .map_err(|e| format!("Failed to open logs directory: {e}"))?;
 
     Ok(())
 }
@@ -40,7 +60,7 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
     }
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -81,6 +101,10 @@ pub fn run() {
             updater::check_for_updates,
             updater::download_and_install_update
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    if let Err(e) = result {
+        eprintln!("Error while running tauri application: {e}");
+        std::process::exit(1);
+    }
 }

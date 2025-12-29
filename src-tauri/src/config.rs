@@ -11,24 +11,42 @@ fn get_config_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
     log::debug!("Getting config file path");
 
     let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
-        log::error!("Failed to get app data directory: {}", e);
+        log::error!("Failed to get app data directory: {e}");
         "Cannot access application data directory. Please check permissions.".to_string()
     })?;
 
     // Create directory if it doesn't exist
-    log::debug!("Ensuring app data directory exists: {:?}", app_data_dir);
+    log::debug!(
+        "Ensuring app data directory exists: {}",
+        app_data_dir.display()
+    );
     fs::create_dir_all(&app_data_dir).map_err(|e| {
-        log::error!("Failed to create app data directory: {}", e);
+        log::error!("Failed to create app data directory: {e}");
         "Cannot create application data directory. Please check disk space and permissions."
             .to_string()
     })?;
 
     let config_path = app_data_dir.join("config.json");
-    log::debug!("Config file path: {:?}", config_path);
+    log::debug!("Config file path: {}", config_path.display());
     Ok(config_path)
 }
 
-/// Load configuration from disk
+/// Loads application configuration from disk.
+///
+/// Reads the configuration file from the application data directory.
+/// If the configuration file doesn't exist, returns a default configuration
+/// with an empty sync path.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for accessing data directory
+///
+/// # Returns
+/// - `Ok(AppConfig)` - Configuration loaded successfully or default config
+/// - `Err(String)` - Failed to read or parse configuration file
+///
+/// # Errors
+/// - Cannot access application data directory
+/// - Configuration file is corrupted
 #[tauri::command]
 pub async fn load_config(app_handle: AppHandle) -> Result<AppConfig, String> {
     log::info!("Loading configuration");
@@ -43,14 +61,14 @@ pub async fn load_config(app_handle: AppHandle) -> Result<AppConfig, String> {
     }
 
     // Read and parse config file
-    log::debug!("Reading config from {:?}", config_path);
+    log::debug!("Reading config from {}", config_path.display());
     let config_json = fs::read_to_string(&config_path).map_err(|e| {
-        log::error!("Failed to read config file: {}", e);
+        log::error!("Failed to read config file: {e}");
         "Cannot read configuration file. Please check permissions.".to_string()
     })?;
 
     let config: AppConfig = serde_json::from_str(&config_json).map_err(|e| {
-        log::error!("Failed to parse config file: {}", e);
+        log::error!("Failed to parse config file: {e}");
         "Configuration file is corrupted. Settings may be reset.".to_string()
     })?;
 
@@ -58,7 +76,22 @@ pub async fn load_config(app_handle: AppHandle) -> Result<AppConfig, String> {
     Ok(config)
 }
 
-/// Save configuration to disk
+/// Saves application configuration to disk.
+///
+/// Serializes the configuration to JSON and writes it to the application
+/// data directory. Creates the data directory if it doesn't exist.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for accessing data directory
+/// * `config` - Application configuration to save
+///
+/// # Returns
+/// - `Ok(())` - Configuration saved successfully
+/// - `Err(String)` - Failed to save configuration
+///
+/// # Errors
+/// - Cannot access application data directory
+/// - Insufficient disk space or permissions
 #[tauri::command]
 pub async fn save_config(app_handle: AppHandle, config: AppConfig) -> Result<(), String> {
     log::info!("Saving configuration");
@@ -66,14 +99,14 @@ pub async fn save_config(app_handle: AppHandle, config: AppConfig) -> Result<(),
 
     // Serialize config to JSON
     let config_json = serde_json::to_string_pretty(&config).map_err(|e| {
-        log::error!("Failed to serialize config: {}", e);
+        log::error!("Failed to serialize config: {e}");
         "Cannot prepare configuration for saving. Please try again.".to_string()
     })?;
 
     // Write to file
-    log::debug!("Writing config to {:?}", config_path);
+    log::debug!("Writing config to {}", config_path.display());
     fs::write(&config_path, config_json).map_err(|e| {
-        log::error!("Failed to write config file: {}", e);
+        log::error!("Failed to write config file: {e}");
         "Cannot save configuration. Please check disk space and permissions.".to_string()
     })?;
 
@@ -81,7 +114,18 @@ pub async fn save_config(app_handle: AppHandle, config: AppConfig) -> Result<(),
     Ok(())
 }
 
-/// Open directory picker and return selected path
+/// Opens a directory picker dialog for selecting the sync directory.
+///
+/// Displays a native directory selection dialog to the user. The selected
+/// directory path is returned as a string. If the user cancels the dialog,
+/// an error is returned.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for creating dialog
+///
+/// # Returns
+/// - `Ok(String)` - Path to selected directory
+/// - `Err(String)` - No directory selected or dialog cancelled
 #[tauri::command]
 pub async fn select_sync_directory(app_handle: AppHandle) -> Result<String, String> {
     log::info!("Opening directory picker");
@@ -94,7 +138,7 @@ pub async fn select_sync_directory(app_handle: AppHandle) -> Result<String, Stri
     })?;
 
     let path_string = file_path.to_string();
-    log::info!("Selected sync directory: {}", path_string);
+    log::info!("Selected sync directory: {path_string}");
 
     // Convert FilePath to String
     Ok(path_string)

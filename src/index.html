@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Educartable Sync</title>
 
-  <!-- Pico CSS v2 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- Pico CSS v2 (bundled locally) -->
+  <link rel="stylesheet" href="pico.min.css">
 
   <!-- Custom styles -->
   <link rel="stylesheet" href="styles.css">
@@ -28,16 +28,15 @@
         <div class="two-column-layout">
           <!-- Left column: Authentication and Updates -->
           <div>
-            <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+            <div class="config-row">
               <span>Statut : <strong id="auth-status" class="status-disconnected">Non connecté</strong></span>
-              <button id="login-btn" style="margin: 0; padding: 0.25rem 0.50rem;">Se connecter</button>
-              <button id="logout-btn" class="secondary hidden"
-                style="margin: 0; padding: 0.25rem 0.75rem;">Déconnexion</button>
+              <button id="login-btn" class="btn-compact-narrow">Se connecter</button>
+              <button id="logout-btn" class="secondary hidden btn-compact">Déconnexion</button>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 1rem;">
+            <div class="config-row">
               <span id="update-status" style="display: none; font-size: 0.9rem;"></span>
-              <button id="check-updates-btn" class="secondary" style="margin: 0; padding: 0.25rem 0.75rem;">
+              <button id="check-updates-btn" class="secondary btn-compact">
                 🔄 Vérifier les mises à jour
               </button>
             </div>
@@ -45,14 +44,12 @@
 
           <!-- Right column: Sync path and Logs -->
           <div>
-            <div
-              style="display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 1rem;">
-              <input type="text" id="sync-path" readonly placeholder="Sélectionnez un dossier de destination"
-                style="cursor: pointer; margin: 0; padding: 0.65rem 0.75rem;">
-              <button id="browse-btn" class="secondary" style="margin: 0; padding: 0.25rem 0.75rem;">Parcourir</button>
+            <div class="config-grid">
+              <input type="text" id="sync-path" readonly placeholder="Sélectionnez un dossier de destination">
+              <button id="browse-btn" class="secondary btn-compact">Parcourir</button>
             </div>
 
-            <button id="open-logs-btn" class="secondary" style="margin: 0; width: 100%; padding: 0.25rem 0.75rem;">
+            <button id="open-logs-btn" class="secondary btn-full-width">
               📋 Ouvrir le dossier des logs
             </button>
           </div>
