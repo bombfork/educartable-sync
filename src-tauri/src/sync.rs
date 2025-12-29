@@ -66,19 +66,22 @@ pub fn get_media_path(sync_path: &Path, activity: &Activity, media: &Media) -> P
 }
 
 fn sanitize_filename(title: &str) -> String {
-    title
+    let sanitized: String = title
         .chars()
         .map(|c| {
             if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
                 c
             } else {
-                '_'
+                ' '
             }
         })
-        .collect::<String>()
-        .chars()
-        .take(50) // Limit length
-        .collect()
+        .collect();
+
+    // Trim and collapse multiple spaces into single space
+    let normalized: String = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // Limit length
+    normalized.chars().take(50).collect()
 }
 
 // Issue #5: Save article text as markdown
@@ -506,57 +509,57 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename_invalid_characters() {
-        // Test all invalid filesystem characters
+        // Test all invalid filesystem characters - replaced with space and collapsed
         let result = sanitize_filename("file/with\\invalid:chars*?\"<>|");
-        assert_eq!(result, "file_with_invalid_chars______");
+        assert_eq!(result, "file with invalid chars");
     }
 
     #[test]
     fn test_sanitize_filename_forward_slash() {
         let result = sanitize_filename("path/to/file");
-        assert_eq!(result, "path_to_file");
+        assert_eq!(result, "path to file");
     }
 
     #[test]
     fn test_sanitize_filename_backslash() {
         let result = sanitize_filename("path\\to\\file");
-        assert_eq!(result, "path_to_file");
+        assert_eq!(result, "path to file");
     }
 
     #[test]
     fn test_sanitize_filename_colon() {
         let result = sanitize_filename("file:name:test");
-        assert_eq!(result, "file_name_test");
+        assert_eq!(result, "file name test");
     }
 
     #[test]
     fn test_sanitize_filename_asterisk() {
         let result = sanitize_filename("file*name");
-        assert_eq!(result, "file_name");
+        assert_eq!(result, "file name");
     }
 
     #[test]
     fn test_sanitize_filename_question_mark() {
         let result = sanitize_filename("file?name");
-        assert_eq!(result, "file_name");
+        assert_eq!(result, "file name");
     }
 
     #[test]
     fn test_sanitize_filename_quotes() {
         let result = sanitize_filename("file\"name");
-        assert_eq!(result, "file_name");
+        assert_eq!(result, "file name");
     }
 
     #[test]
     fn test_sanitize_filename_angle_brackets() {
         let result = sanitize_filename("file<name>test");
-        assert_eq!(result, "file_name_test");
+        assert_eq!(result, "file name test");
     }
 
     #[test]
     fn test_sanitize_filename_pipe() {
         let result = sanitize_filename("file|name");
-        assert_eq!(result, "file_name");
+        assert_eq!(result, "file name");
     }
 
     #[test]
@@ -575,9 +578,9 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename_emojis() {
-        // Emojis are not alphanumeric, should be replaced
+        // Emojis are not alphanumeric, replaced with space and trimmed
         let result = sanitize_filename("file🦀name🎉");
-        assert_eq!(result, "file_name_");
+        assert_eq!(result, "file name");
     }
 
     #[test]
@@ -612,38 +615,44 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename_whitespace_only() {
+        // Whitespace-only input becomes empty after trim
         let result = sanitize_filename("   ");
-        assert_eq!(result, "   ");
+        assert_eq!(result, "");
     }
 
     #[test]
     fn test_sanitize_filename_special_chars_only() {
+        // All special chars become spaces, then trimmed to empty
         let result = sanitize_filename("/*?:|<>");
-        assert_eq!(result, "_______");
+        assert_eq!(result, "");
     }
 
     #[test]
     fn test_sanitize_filename_path_traversal_attempt() {
+        // Dots replaced with spaces, collapsed and trimmed
         let result = sanitize_filename("../../../etc/passwd");
-        assert_eq!(result, "_________etc_passwd");
+        assert_eq!(result, "etc passwd");
     }
 
     #[test]
     fn test_sanitize_filename_dots() {
+        // Dots replaced with spaces, collapsed and trimmed
         let result = sanitize_filename("..hidden.file.txt");
-        assert_eq!(result, "__hidden_file_txt");
+        assert_eq!(result, "hidden file txt");
     }
 
     #[test]
-    fn test_sanitize_filename_spaces_preserved() {
+    fn test_sanitize_filename_spaces_collapsed() {
+        // Multiple spaces are collapsed into single space
         let result = sanitize_filename("file with multiple  spaces");
-        assert_eq!(result, "file with multiple  spaces");
+        assert_eq!(result, "file with multiple spaces");
     }
 
     #[test]
-    fn test_sanitize_filename_leading_trailing_spaces() {
+    fn test_sanitize_filename_leading_trailing_spaces_trimmed() {
+        // Leading and trailing spaces are trimmed
         let result = sanitize_filename("  file  ");
-        assert_eq!(result, "  file  ");
+        assert_eq!(result, "file");
     }
 
     // ========== Tests for get_activity_folder ==========
@@ -669,7 +678,7 @@ mod tests {
         let result = get_activity_folder(&sync_path, &activity);
         assert_eq!(
             result,
-            PathBuf::from("/sync/2024-12-25_Test_Activity_With_Invalid_Chars_")
+            PathBuf::from("/sync/2024-12-25_Test Activity With Invalid Chars")
         );
     }
 
@@ -760,7 +769,7 @@ mod tests {
         let result = get_media_path(&sync_path, &activity, &media);
         assert_eq!(
             result,
-            PathBuf::from("/sync/2024-11-30_Activity_With_Invalid_Chars__/image123.png")
+            PathBuf::from("/sync/2024-11-30_Activity With Invalid Chars/image123.png")
         );
     }
 
