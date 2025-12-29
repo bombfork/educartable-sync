@@ -24,12 +24,11 @@ RUST_LOG=${usage_log_level:-info} cargo tauri dev
 description = "Run Rust tests"
 run = "cargo test --manifest-path src-tauri/Cargo.toml"
 
-[tasks.e2e]
-description = "Run end-to-end tests"
+[tasks.front]
+description = "Run frontend tests"
 run = """
-cd e2e-tests
 npm install
-npm test
+npm run test:run
 """
 
 [tasks.build]
