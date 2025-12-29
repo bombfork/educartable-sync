@@ -56,7 +56,6 @@ async function checkForUpdates() {
     // Set button to loading state
     checkBtn.disabled = true;
     checkBtn.setAttribute('aria-busy', 'true');
-    const originalText = checkBtn.textContent;
     checkBtn.textContent = 'Vérification...';
 
     const loadingNotification = showLoading('Vérification des mises à jour...');
@@ -84,11 +83,13 @@ async function checkForUpdates() {
 
         // Show error to user
         handleError(error, 'update check');
+
+        // On error, reset button to default check state
+        checkBtn.textContent = '🔄 Vérifier les mises à jour';
     } finally {
-        // Reset button state
+        // Reset button state (but not text - that's set by setUpdateAvailableUI/setUpToDateUI)
         checkBtn.disabled = false;
         checkBtn.removeAttribute('aria-busy');
-        checkBtn.textContent = originalText;
     }
 }
 
