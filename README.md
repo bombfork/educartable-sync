@@ -55,4 +55,4 @@ If you encounter any issues, please [open an issue](https://github.com/bombfork/
 
 ## License
 
-This project is open source.
+This project is licensed under the [MIT License](LICENSE.md).

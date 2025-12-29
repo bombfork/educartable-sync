@@ -55,4 +55,4 @@ Si vous rencontrez des problèmes, veuillez [ouvrir une issue](https://github.co
 
 ## Licence
 
-Ce projet est open source.
+Ce projet est sous licence [MIT](LICENSE.md).
