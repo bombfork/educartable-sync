@@ -19,14 +19,14 @@ pub trait CredentialStore: Send + Sync {
     fn delete(&self, key: &str) -> Result<(), String>;
 }
 
-/// KeyringCredentialStore - stores credentials using the system keyring
+/// `KeyringCredentialStore` - stores credentials using the system keyring
 pub struct KeyringCredentialStore {
     service_name: String,
     username_prefix: String,
 }
 
 impl KeyringCredentialStore {
-    /// Create a new KeyringCredentialStore with default service and username prefix
+    /// Create a new `KeyringCredentialStore` with default service and username prefix
     pub fn new() -> Self {
         Self {
             service_name: SERVICE_NAME.to_string(),
@@ -41,42 +41,30 @@ impl CredentialStore for KeyringCredentialStore {
         let value_chars = value.chars().count(); // Character count
 
         log::info!(
-            "Storing token field '{}' (length: {} chars, {} bytes)",
-            key,
-            value_chars,
-            value_bytes
+            "Storing token field '{key}' (length: {value_chars} chars, {value_bytes} bytes)"
         );
 
         if value_bytes <= SAFE_CHUNK_SIZE_BYTES {
             // Field fits in single entry, store directly
             let username = format!("{}.{}", self.username_prefix, key);
             let entry = Entry::new(&self.service_name, &username).map_err(|e| {
-                log::error!("Keyring entry creation failed for '{}': {}", key, e);
+                log::error!("Keyring entry creation failed for '{key}': {e}");
                 format!(
-                    "Cannot access system keyring for '{}'. Please check your system permissions.",
-                    key
+                    "Cannot access system keyring for '{key}'. Please check your system permissions."
                 )
             })?;
 
             entry.set_password(value).map_err(|e| {
                 log::error!(
-                    "Failed to store '{}' ({} chars, {} bytes) in keyring: {}",
-                    key,
-                    value_chars,
-                    value_bytes,
-                    e
+                    "Failed to store '{key}' ({value_chars} chars, {value_bytes} bytes) in keyring: {e}"
                 );
                 format!(
-                    "Cannot save '{}' credential ({} chars, {} bytes). Error: {}",
-                    key, value_chars, value_bytes, e
+                    "Cannot save '{key}' credential ({value_chars} chars, {value_bytes} bytes). Error: {e}"
                 )
             })?;
 
             log::debug!(
-                "Token field '{}' stored successfully ({} chars, {} bytes, single entry)",
-                key,
-                value_chars,
-                value_bytes
+                "Token field '{key}' stored successfully ({value_chars} chars, {value_bytes} bytes, single entry)"
             );
         } else {
             // Field needs to be chunked based on byte size
@@ -114,33 +102,24 @@ impl CredentialStore for KeyringCredentialStore {
             let chunk_count = chunks.len();
 
             log::debug!(
-                "Token field '{}' is {} bytes ({} chars), splitting into {} chunks of max {} bytes each",
-                key, value_bytes, value_chars, chunk_count, SAFE_CHUNK_SIZE_BYTES
+                "Token field '{key}' is {value_bytes} bytes ({value_chars} chars), splitting into {chunk_count} chunks of max {SAFE_CHUNK_SIZE_BYTES} bytes each"
             );
 
             // Store metadata entry with chunk count (with prefix to avoid confusion with numeric data)
             let username = format!("{}.{}", self.username_prefix, key);
             let entry = Entry::new(&self.service_name, &username).map_err(|e| {
-                log::error!(
-                    "Keyring metadata entry creation failed for '{}': {}",
-                    key,
-                    e
-                );
-                format!("Cannot access system keyring for '{}'.", key)
+                log::error!("Keyring metadata entry creation failed for '{key}': {e}");
+                format!("Cannot access system keyring for '{key}'.")
             })?;
 
             // Use "CHUNKS:" prefix to distinguish metadata from numeric data (e.g., timestamps)
-            let metadata = format!("CHUNKS:{}", chunk_count);
+            let metadata = format!("CHUNKS:{chunk_count}");
             entry.set_password(&metadata).map_err(|e| {
-                log::error!("Failed to store '{}' metadata in keyring: {}", key, e);
-                format!("Cannot save '{}' metadata.", key)
+                log::error!("Failed to store '{key}' metadata in keyring: {e}");
+                format!("Cannot save '{key}' metadata.")
             })?;
 
-            log::debug!(
-                "Token field '{}' metadata stored: {} chunks",
-                key,
-                chunk_count
-            );
+            log::debug!("Token field '{key}' metadata stored: {chunk_count} chunks");
 
             // Store each chunk
             for (index, chunk) in chunks.iter().enumerate() {
@@ -151,48 +130,27 @@ impl CredentialStore for KeyringCredentialStore {
                 let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
                 let entry = Entry::new(&self.service_name, &username).map_err(|e| {
                     log::error!(
-                        "Keyring entry creation failed for '{}' chunk {}: {}",
-                        key,
-                        chunk_index,
-                        e
+                        "Keyring entry creation failed for '{key}' chunk {chunk_index}: {e}"
                     );
-                    format!(
-                        "Cannot access system keyring for '{}' chunk {}.",
-                        key, chunk_index
-                    )
+                    format!("Cannot access system keyring for '{key}' chunk {chunk_index}.")
                 })?;
 
                 entry.set_password(chunk).map_err(|e| {
                     log::error!(
-                        "Failed to store '{}' chunk {} ({} chars, {} bytes) in keyring: {}",
-                        key,
-                        chunk_index,
-                        chunk_chars,
-                        chunk_bytes,
-                        e
+                        "Failed to store '{key}' chunk {chunk_index} ({chunk_chars} chars, {chunk_bytes} bytes) in keyring: {e}"
                     );
                     format!(
-                        "Cannot save '{}' chunk {} ({} chars, {} bytes). Error: {}",
-                        key, chunk_index, chunk_chars, chunk_bytes, e
+                        "Cannot save '{key}' chunk {chunk_index} ({chunk_chars} chars, {chunk_bytes} bytes). Error: {e}"
                     )
                 })?;
 
                 log::debug!(
-                    "Token field '{}' chunk {}/{} stored successfully ({} chars, {} bytes)",
-                    key,
-                    chunk_index,
-                    chunk_count,
-                    chunk_chars,
-                    chunk_bytes
+                    "Token field '{key}' chunk {chunk_index}/{chunk_count} stored successfully ({chunk_chars} chars, {chunk_bytes} bytes)"
                 );
             }
 
             log::info!(
-                "Token field '{}' stored successfully ({} chars, {} bytes in {} chunks)",
-                key,
-                value_chars,
-                value_bytes,
-                chunk_count
+                "Token field '{key}' stored successfully ({value_chars} chars, {value_bytes} bytes in {chunk_count} chunks)"
             );
         }
 
@@ -202,32 +160,25 @@ impl CredentialStore for KeyringCredentialStore {
     fn load(&self, key: &str) -> Result<String, String> {
         let username = format!("{}.{}", self.username_prefix, key);
         let entry = Entry::new(&self.service_name, &username).map_err(|e| {
-            log::error!("Keyring entry creation failed for '{}': {}", key, e);
+            log::error!("Keyring entry creation failed for '{key}': {e}");
             "Cannot access system keyring. Please check your system permissions.".to_string()
         })?;
 
         let value = entry.get_password().map_err(|e| {
-            log::warn!("Failed to load '{}' from keyring: {}", key, e);
-            format!(
-                "Not authenticated. Missing token field '{}'. Please log in first.",
-                key
-            )
+            log::warn!("Failed to load '{key}' from keyring: {e}");
+            format!("Not authenticated. Missing token field '{key}'. Please log in first.")
         })?;
 
         // Check if this is metadata (chunk count) or actual data
         // Metadata has "CHUNKS:" prefix to avoid confusion with numeric data
         if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
             let chunk_count = chunk_count_str.parse::<usize>().map_err(|e| {
-                log::error!("Failed to parse chunk count for '{}': {}", key, e);
-                format!("Corrupted metadata for '{}'. Please log in again.", key)
+                log::error!("Failed to parse chunk count for '{key}': {e}");
+                format!("Corrupted metadata for '{key}'. Please log in again.")
             })?;
 
             // This is chunked data, load all chunks
-            log::debug!(
-                "Token field '{}' is chunked, loading {} chunks",
-                key,
-                chunk_count
-            );
+            log::debug!("Token field '{key}' is chunked, loading {chunk_count} chunks");
 
             let mut chunks = Vec::with_capacity(chunk_count);
 
@@ -235,25 +186,14 @@ impl CredentialStore for KeyringCredentialStore {
                 let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
                 let entry = Entry::new(&self.service_name, &username).map_err(|e| {
                     log::error!(
-                        "Keyring entry creation failed for '{}' chunk {}: {}",
-                        key,
-                        chunk_index,
-                        e
+                        "Keyring entry creation failed for '{key}' chunk {chunk_index}: {e}"
                     );
                     "Cannot access system keyring.".to_string()
                 })?;
 
                 let chunk = entry.get_password().map_err(|e| {
-                    log::error!(
-                        "Failed to load '{}' chunk {} from keyring: {}",
-                        key,
-                        chunk_index,
-                        e
-                    );
-                    format!(
-                        "Missing '{}' chunk {}. Please log in again.",
-                        key, chunk_index
-                    )
+                    log::error!("Failed to load '{key}' chunk {chunk_index} from keyring: {e}");
+                    format!("Missing '{key}' chunk {chunk_index}. Please log in again.")
                 })?;
 
                 log::debug!(
@@ -288,8 +228,8 @@ impl CredentialStore for KeyringCredentialStore {
     fn delete(&self, key: &str) -> Result<(), String> {
         let username = format!("{}.{}", self.username_prefix, key);
         let entry = Entry::new(&self.service_name, &username).map_err(|e| {
-            log::error!("Keyring entry creation failed for '{}': {}", key, e);
-            format!("Cannot access system keyring for '{}'.", key)
+            log::error!("Keyring entry creation failed for '{key}': {e}");
+            format!("Cannot access system keyring for '{key}'.")
         })?;
 
         // Try to read the entry to check if it's chunked
@@ -298,26 +238,17 @@ impl CredentialStore for KeyringCredentialStore {
             if let Some(chunk_count_str) = value.strip_prefix("CHUNKS:") {
                 if let Ok(chunk_count) = chunk_count_str.parse::<usize>() {
                     // This is chunked data, delete all chunks
-                    log::debug!(
-                        "Token field '{}' is chunked, deleting {} chunks",
-                        key,
-                        chunk_count
-                    );
+                    log::debug!("Token field '{key}' is chunked, deleting {chunk_count} chunks");
 
                     for chunk_index in 1..=chunk_count {
                         let username = format!("{}.{}_{}", self.username_prefix, key, chunk_index);
                         if let Ok(chunk_entry) = Entry::new(&self.service_name, &username) {
                             match chunk_entry.delete_password() {
-                                Ok(_) => log::debug!(
-                                    "Token field '{}' chunk {} deleted",
-                                    key,
-                                    chunk_index
+                                Ok(()) => log::debug!(
+                                    "Token field '{key}' chunk {chunk_index} deleted"
                                 ),
                                 Err(e) => log::warn!(
-                                    "Failed to delete '{}' chunk {}: {} (may not exist)",
-                                    key,
-                                    chunk_index,
-                                    e
+                                    "Failed to delete '{key}' chunk {chunk_index}: {e} (may not exist)"
                                 ),
                             }
                         }
@@ -328,16 +259,12 @@ impl CredentialStore for KeyringCredentialStore {
 
         // Delete the main entry (either metadata or single value)
         match entry.delete_password() {
-            Ok(_) => {
-                log::debug!("Token field '{}' deleted successfully", key);
+            Ok(()) => {
+                log::debug!("Token field '{key}' deleted successfully");
                 Ok(())
             }
             Err(e) => {
-                log::warn!(
-                    "Failed to delete '{}' from keyring: {} (may not exist)",
-                    key,
-                    e
-                );
+                log::warn!("Failed to delete '{key}' from keyring: {e} (may not exist)");
                 Ok(()) // Don't treat as error if entry doesn't exist
             }
         }
@@ -398,7 +325,7 @@ pub fn store_tokens(store: &dyn CredentialStore, tokens: &AuthTokens) -> Result<
     Ok(())
 }
 
-/// Store authentication tokens using the default KeyringCredentialStore
+/// Store authentication tokens using the default `KeyringCredentialStore`
 pub fn store_tokens_default(tokens: &AuthTokens) -> Result<(), String> {
     let store = KeyringCredentialStore::new();
     store_tokens(&store, tokens)
@@ -419,7 +346,7 @@ pub fn load_tokens(store: &dyn CredentialStore) -> Result<AuthTokens, String> {
 
     // Parse expires_at
     let expires_at = expires_at_str.parse::<i64>().map_err(|e| {
-        log::error!("Failed to parse expires_at as i64: {}", e);
+        log::error!("Failed to parse expires_at as i64: {e}");
         "Login credentials are corrupted. Please log in again.".to_string()
     })?;
 
@@ -435,7 +362,7 @@ pub fn load_tokens(store: &dyn CredentialStore) -> Result<AuthTokens, String> {
     Ok(tokens)
 }
 
-/// Load authentication tokens using the default KeyringCredentialStore
+/// Load authentication tokens using the default `KeyringCredentialStore`
 pub fn load_tokens_default() -> Result<AuthTokens, String> {
     let store = KeyringCredentialStore::new();
     load_tokens(&store)
@@ -450,12 +377,12 @@ pub fn delete_tokens(store: &dyn CredentialStore) -> Result<(), String> {
     // Delete each token field (will automatically delete all chunks if present)
     for field_name in &TOKEN_FIELDS {
         if let Err(e) = store.delete(field_name) {
-            errors.push(format!("{}: {}", field_name, e));
+            errors.push(format!("{field_name}: {e}"));
         }
     }
 
     if !errors.is_empty() {
-        log::error!("Errors occurred while deleting token entries: {:?}", errors);
+        log::error!("Errors occurred while deleting token entries: {errors:?}");
         return Err(format!(
             "Failed to clear some login credentials: {}",
             errors.join(", ")
@@ -466,12 +393,27 @@ pub fn delete_tokens(store: &dyn CredentialStore) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete authentication tokens using the default KeyringCredentialStore
+/// Delete authentication tokens using the default `KeyringCredentialStore`
 pub fn delete_tokens_default() -> Result<(), String> {
     let store = KeyringCredentialStore::new();
     delete_tokens(&store)
 }
 
+/// Receives authentication tokens from the webview JavaScript injection.
+///
+/// This command is called by JavaScript code injected into the authentication
+/// webview after successful login. It receives the serialized token data from
+/// localStorage and forwards it to the authentication flow via an internal channel.
+///
+/// # Arguments
+/// * `tokens_json` - Serialized JSON string containing OAuth tokens from localStorage
+///
+/// # Returns
+/// - `Ok(())` - Tokens successfully received and forwarded
+/// - `Err(String)` - Failed to forward tokens through internal channel
+///
+/// # Errors
+/// - Channel send failure (authentication flow may have timed out)
 #[tauri::command]
 pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
     log::debug!("Received token submission from webview");
@@ -479,7 +421,7 @@ pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
     if let Ok(guard) = TOKEN_CHANNEL.lock() {
         if let Some(tx) = guard.as_ref() {
             tx.send(tokens_json).map_err(|e| {
-                log::error!("Failed to send tokens through channel: {}", e);
+                log::error!("Failed to send tokens through channel: {e}");
                 e.to_string()
             })?;
         }
@@ -487,6 +429,26 @@ pub fn submit_tokens(tokens_json: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Initiates OAuth authentication flow via Keycloak webview.
+///
+/// Opens a new webview window pointing to Educartable's login page.
+/// After successful authentication, extracts tokens from localStorage
+/// via JavaScript injection and stores them securely in the system keyring.
+/// The webview automatically monitors for successful OAuth callback URLs
+/// and triggers token extraction when login completes.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for creating webview window
+///
+/// # Returns
+/// - `Ok(AuthTokens)` - Authentication successful, tokens extracted and stored
+/// - `Err(String)` - Authentication failed with user-friendly error message
+///
+/// # Errors
+/// - Login timeout (300 seconds)
+/// - Token extraction failure from webview
+/// - Keyring storage failure
+/// - User cancelled login or closed webview
 #[tauri::command]
 pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, String> {
     log::info!("Starting authentication flow");
@@ -498,12 +460,14 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     let (token_tx, token_rx) = mpsc::channel();
 
     // Store the token sender in global state
+    #[allow(clippy::unwrap_used)] // Safe: static mutex, won't be poisoned
     {
         let mut guard = TOKEN_CHANNEL.lock().unwrap();
         *guard = Some(token_tx);
     }
 
     log::debug!("Creating authentication webview window");
+    #[allow(clippy::unwrap_used)] // Safe: hardcoded valid URL
     let webview = WebviewWindowBuilder::new(
         &app_handle,
         "auth",
@@ -527,7 +491,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     })
     .build()
     .map_err(|e| {
-        log::error!("Failed to create authentication webview: {}", e);
+        log::error!("Failed to create authentication webview: {e}");
         e.to_string()
     })?;
 
@@ -541,8 +505,8 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     })
     .await
     .map_err(|e| {
-        log::error!("Task error during login wait: {}", e);
-        format!("Task error: {}", e)
+        log::error!("Task error during login wait: {e}");
+        format!("Task error: {e}")
     })??;
 
     // Wait for the OIDC client library to complete the token exchange
@@ -551,7 +515,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
 
     // JavaScript to inject for extracting tokens from localStorage
     // Call the Tauri command to send tokens back
-    let js_code = r#"
+    let js_code = r"
         (function() {
             const key = 'oidc.user:https://accounts.edumoov.com/auth/realms/edumoov:educlasse';
             const data = localStorage.getItem(key);
@@ -561,11 +525,11 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
                 window.__TAURI__.core.invoke('submit_tokens', { tokensJson: 'null' });
             }
         })();
-    "#;
+    ";
 
     log::debug!("Injecting JavaScript to extract tokens from localStorage");
     webview.eval(js_code).map_err(|e| {
-        log::error!("Failed to inject JavaScript: {}", e);
+        log::error!("Failed to inject JavaScript: {e}");
         "Login window error. Please try again.".to_string()
     })?;
 
@@ -579,11 +543,12 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     })
     .await
     .map_err(|e| {
-        log::error!("Task error during token extraction: {}", e);
+        log::error!("Task error during token extraction: {e}");
         "Internal error during login. Please try again.".to_string()
     })??;
 
     // Clear the global state
+    #[allow(clippy::unwrap_used)] // Safe: static mutex, won't be poisoned
     {
         let mut guard = TOKEN_CHANNEL.lock().unwrap();
         *guard = None;
@@ -602,7 +567,7 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     // Parse the JSON string into AuthTokens
     log::debug!("Parsing extracted tokens");
     let tokens: AuthTokens = serde_json::from_str(&tokens_str).map_err(|e| {
-        log::error!("Failed to parse tokens from JSON: {}", e);
+        log::error!("Failed to parse tokens from JSON: {e}");
         "Login data error. Please try again.".to_string()
     })?;
 
@@ -613,6 +578,20 @@ pub async fn authenticate(app_handle: AppHandle<Wry>) -> Result<AuthTokens, Stri
     Ok(tokens)
 }
 
+/// Clears stored authentication tokens from the system keyring.
+///
+/// Removes all authentication tokens including access token, refresh token,
+/// id token, expiration timestamp, and session state. This effectively logs
+/// the user out of the application. The user will need to authenticate again
+/// to use any features requiring API access.
+///
+/// # Returns
+/// - `Ok(())` - Tokens successfully cleared from keyring
+/// - `Err(String)` - Failed to clear tokens with user-friendly error message
+///
+/// # Errors
+/// - Keyring access failure
+/// - Some tokens could not be deleted
 #[tauri::command]
 pub async fn logout() -> Result<(), String> {
     log::info!("User logout requested");
@@ -622,7 +601,7 @@ pub async fn logout() -> Result<(), String> {
 }
 
 /// Refresh access token using the refresh token
-/// Returns new AuthTokens with updated access_token, refresh_token, and expires_at
+/// Returns new `AuthTokens` with updated `access_token`, `refresh_token`, and `expires_at`
 pub async fn refresh_access_token(
     store: &dyn CredentialStore,
     refresh_token: &str,
@@ -647,24 +626,21 @@ pub async fn refresh_access_token(
         .send()
         .await
         .map_err(|e| {
-            log::error!("Token refresh request failed: {}", e);
-            format!("Failed to connect to authentication server: {}", e)
+            log::error!("Token refresh request failed: {e}");
+            format!("Failed to connect to authentication server: {e}")
         })?;
 
     let status = response.status();
-    log::debug!("Token refresh response status: {}", status);
+    log::debug!("Token refresh response status: {status}");
 
     if !status.is_success() {
         let error_body = response.text().await.unwrap_or_default();
-        log::error!(
-            "Token refresh failed with status {}: {}",
-            status,
-            error_body
-        );
+        log::error!("Token refresh failed with status {status}: {error_body}");
         return Err("Token refresh failed. Please log in again.".to_string());
     }
 
     // Parse the response
+    #[allow(clippy::items_after_statements)] // Local struct for response parsing
     #[derive(serde::Deserialize)]
     struct TokenResponse {
         access_token: String,
@@ -675,14 +651,15 @@ pub async fn refresh_access_token(
     }
 
     let token_response: TokenResponse = response.json().await.map_err(|e| {
-        log::error!("Failed to parse token refresh response: {}", e);
+        log::error!("Failed to parse token refresh response: {e}");
         "Invalid response from authentication server. Please log in again.".to_string()
     })?;
 
     // Calculate expires_at timestamp
+    #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap() // Safe: current time is after UNIX_EPOCH
         .as_secs() as i64;
     let expires_at = now + token_response.expires_in;
 
@@ -697,10 +674,7 @@ pub async fn refresh_access_token(
     // Store the new tokens
     store_tokens(store, &tokens)?;
 
-    log::info!(
-        "Access token refreshed successfully, expires at {}",
-        expires_at
-    );
+    log::info!("Access token refreshed successfully, expires at {expires_at}");
     Ok(tokens)
 }
 
@@ -714,9 +688,10 @@ pub async fn get_valid_access_token(store: &dyn CredentialStore) -> Result<Strin
         "Not authenticated. Please log in first.".to_string()
     })?;
 
+    #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap() // Safe: current time is after UNIX_EPOCH
         .as_secs() as i64;
 
     // Check if access token is expired or will expire in the next 60 seconds
@@ -734,43 +709,55 @@ pub async fn get_valid_access_token(store: &dyn CredentialStore) -> Result<Strin
 pub async fn is_authenticated_with_store(store: &dyn CredentialStore) -> Result<bool, String> {
     log::debug!("Checking authentication status");
 
-    match load_tokens(store) {
-        Ok(tokens) => {
-            // Check if token is expired
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64;
+    if let Ok(tokens) = load_tokens(store) {
+        // Check if token is expired
+        #[allow(clippy::unwrap_used, clippy::cast_possible_wrap)]
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap() // Safe: current time is after UNIX_EPOCH
+            .as_secs() as i64;
 
-            // Consider authenticated if we have tokens, even if access token is expired
-            // (as long as we can potentially refresh)
-            // For a more accurate check, we'd need to decode the refresh token's expiration
-            // For now, we'll try to refresh if access token is expired
-            if tokens.expires_at > now {
-                log::debug!("Authentication status: valid (access token not expired)");
-                Ok(true)
-            } else {
-                // Access token expired, try to refresh
-                log::debug!("Access token expired, attempting refresh to verify authentication");
-                match refresh_access_token(store, &tokens.refresh_token).await {
-                    Ok(_) => {
-                        log::debug!("Authentication status: valid (token refreshed successfully)");
-                        Ok(true)
-                    }
-                    Err(e) => {
-                        log::debug!("Authentication status: invalid (refresh failed: {})", e);
-                        Ok(false)
-                    }
+        // Consider authenticated if we have tokens, even if access token is expired
+        // (as long as we can potentially refresh)
+        // For a more accurate check, we'd need to decode the refresh token's expiration
+        // For now, we'll try to refresh if access token is expired
+        if tokens.expires_at > now {
+            log::debug!("Authentication status: valid (access token not expired)");
+            Ok(true)
+        } else {
+            // Access token expired, try to refresh
+            log::debug!("Access token expired, attempting refresh to verify authentication");
+            match refresh_access_token(store, &tokens.refresh_token).await {
+                Ok(_) => {
+                    log::debug!("Authentication status: valid (token refreshed successfully)");
+                    Ok(true)
+                }
+                Err(e) => {
+                    log::debug!("Authentication status: invalid (refresh failed: {e})");
+                    Ok(false)
                 }
             }
         }
-        Err(_) => {
-            log::debug!("Authentication status: not authenticated");
-            Ok(false)
-        }
+    } else {
+        log::debug!("Authentication status: not authenticated");
+        Ok(false)
     }
 }
 
+/// Checks if the user is currently authenticated with valid tokens.
+///
+/// Verifies that valid tokens exist in the keyring. If the access token
+/// is expired but a refresh token exists, automatically attempts to refresh
+/// the access token. Returns true if the user has valid tokens (either
+/// unexpired or successfully refreshed).
+///
+/// # Returns
+/// - `Ok(true)` - User is authenticated with valid or refreshable tokens
+/// - `Ok(false)` - User is not authenticated or tokens cannot be refreshed
+/// - `Err(String)` - Error checking authentication status
+///
+/// # Errors
+/// - Keyring access failure
 #[tauri::command]
 pub async fn is_authenticated() -> Result<bool, String> {
     let store = KeyringCredentialStore::new();

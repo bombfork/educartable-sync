@@ -56,6 +56,7 @@ pub struct Media {
     pub extension: String,
     pub size: u64,
     #[serde(rename = "type")]
+    #[allow(clippy::struct_field_names)] // Field represents "type" from API, matches domain
     pub media_type: String,
 }
 
