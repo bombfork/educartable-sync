@@ -117,7 +117,7 @@ fn format_article_markdown(activity: &Activity) -> String {
     let date = activity.date.split('T').next().unwrap_or("unknown-date");
 
     format!(
-        "# {}\n\nPublished: {}\n\n{}",
+        "# {}\n\nPublié le : {}\n\n{}",
         activity.title, date, activity.body
     )
 }
