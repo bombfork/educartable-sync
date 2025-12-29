@@ -275,7 +275,7 @@ impl CredentialStore for KeyringCredentialStore {
 static TOKEN_CHANNEL: Mutex<Option<mpsc::Sender<String>>> = Mutex::new(None);
 
 // Constants for keyring service identification
-const SERVICE_NAME: &str = "educartable-downloader";
+const SERVICE_NAME: &str = "educartable-sync";
 const USERNAME_PREFIX: &str = "auth";
 
 // Windows Credential Manager limit per entry: 2560 BYTES (in UTF-16)
