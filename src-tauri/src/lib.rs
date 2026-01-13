@@ -96,6 +96,7 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::select_sync_directory,
+            sync::fetch_activities,
             sync::start_sync,
             open_logs_directory,
             updater::check_for_updates,

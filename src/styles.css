@@ -357,3 +357,203 @@ section button + button {
         flex-direction: column;
     }
 }
+
+
+/* ============================================
+   Issue #131: Activity Selection Dialog
+   ============================================ */
+
+#activity-selection-dialog {
+    max-width: 700px;
+    width: 90%;
+    max-height: 85vh;
+    padding: 0;
+    border: none;
+    border-radius: var(--pico-border-radius);
+    overflow: hidden;
+}
+
+#activity-selection-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.activity-dialog-article {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+}
+
+.activity-dialog-article header {
+    padding: 1rem 1.5rem;
+    margin: 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.activity-dialog-article header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.activity-dialog-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: var(--pico-card-background-color);
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.selection-controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.selection-count {
+    font-size: 0.9rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+.activity-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    min-height: 200px;
+    max-height: 400px;
+}
+
+.activity-dialog-article footer {
+    padding: 1rem 1.5rem;
+    margin: 0;
+    border-top: 1px solid var(--pico-muted-border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+.activity-dialog-article footer button {
+    margin: 0;
+}
+
+/* Activity Item Styling */
+.activity-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-item:hover {
+    background-color: var(--pico-card-sectioning-background-color);
+}
+
+.activity-item.selected {
+    background-color: rgba(var(--pico-primary-background-rgb, 26, 115, 232), 0.08);
+}
+
+.activity-checkbox {
+    margin: 0.25rem 0 0 0;
+    flex-shrink: 0;
+}
+
+.activity-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.activity-title {
+    font-weight: 500;
+    color: var(--pico-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.activity-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--pico-muted-color);
+}
+
+.activity-date {
+    font-weight: 500;
+}
+
+.activity-media-count {
+    color: var(--pico-muted-color);
+}
+
+.synced-badge,
+.new-badge {
+    font-size: 0.75rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+.synced-badge {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+}
+
+.new-badge {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+}
+
+.no-activities,
+.loading-text {
+    text-align: center;
+    padding: 2rem;
+    color: var(--pico-muted-color);
+    font-style: italic;
+}
+
+/* Responsive adjustments for activity dialog */
+@media (max-width: 600px) {
+    #activity-selection-dialog {
+        width: 95%;
+        max-height: 90vh;
+    }
+
+    .activity-dialog-controls {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: stretch;
+    }
+
+    .selection-controls {
+        justify-content: center;
+    }
+
+    .selection-count {
+        text-align: center;
+    }
+
+    .activity-meta {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .activity-dialog-article footer {
+        flex-direction: column;
+    }
+
+    .activity-dialog-article footer button {
+        width: 100%;
+    }
+}
