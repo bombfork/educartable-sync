@@ -1,6 +1,6 @@
 [package]
 name = "educartable-sync"
-version = "1.2.0"
+version = "1.2.1"
 description = "Synchronisation de photos depuis Educartable"
 authors = ["Thomas Nemer"]
 edition = "2021"
