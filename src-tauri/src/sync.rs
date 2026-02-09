@@ -80,8 +80,13 @@ fn sanitize_filename(title: &str) -> String {
     // Trim and collapse multiple spaces into single space
     let normalized: String = sanitized.split_whitespace().collect::<Vec<_>>().join(" ");
 
-    // Limit length
-    normalized.chars().take(50).collect()
+    // Limit length and trim any trailing spaces from truncation
+    normalized
+        .chars()
+        .take(50)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 // Issue #5: Save article text as markdown
