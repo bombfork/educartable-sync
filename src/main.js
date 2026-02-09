@@ -18,6 +18,8 @@ import { checkForUpdatesSilently, handleUpdateButtonClick } from './updater.js';
 // Application state
 let isAuthenticated = false;
 let config = null;
+let activitiesData = null; // Cached activities and sync state
+let selectedActivityIds = new Set(); // Currently selected activity IDs
 
 /**
  * Initialize the application when DOM is ready
@@ -57,8 +59,23 @@ function setupEventListeners() {
     document.getElementById('open-logs-btn').addEventListener('click', handleOpenLogs);
     document.getElementById('check-updates-btn').addEventListener('click', handleUpdateButtonClick);
 
-    // Sync button
-    document.getElementById('sync-btn').addEventListener('click', handleSync);
+    // Sync button - now opens activity selection dialog
+    document.getElementById('sync-btn').addEventListener('click', handleSyncButtonClick);
+
+    // Activity selection dialog buttons
+    document.getElementById('close-dialog-btn').addEventListener('click', closeActivityDialog);
+    document.getElementById('cancel-selection-btn').addEventListener('click', closeActivityDialog);
+    document.getElementById('confirm-sync-btn').addEventListener('click', handleConfirmSync);
+    document.getElementById('select-all-btn').addEventListener('click', handleSelectAll);
+    document.getElementById('deselect-all-btn').addEventListener('click', handleDeselectAll);
+
+    // Close dialog when clicking outside
+    const dialog = document.getElementById('activity-selection-dialog');
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) {
+            closeActivityDialog();
+        }
+    });
 }
 
 /**
@@ -358,19 +375,238 @@ function updateProgress(progress) {
 
 /**
  * Handle sync button click
- * Triggers synchronization with the backend
+ * Opens activity selection dialog instead of syncing directly
  */
-async function handleSync() {
-    console.log('Sync initiated...');
+async function handleSyncButtonClick() {
+    console.log('Sync button clicked, opening activity selection...');
 
     const syncBtn = document.getElementById('sync-btn');
 
     // Validate configuration
     if (!config.sync_path) {
-        const parsed = parseError('Dossier de synchronisation non configuré');
+        const parsed = parseError('Dossier de synchronisation non configure');
         showError(parsed.title, parsed.message, parsed.action);
         return;
     }
+
+    // Disable button and show loading state
+    syncBtn.disabled = true;
+    syncBtn.setAttribute('aria-busy', 'true');
+    const originalText = syncBtn.textContent;
+    syncBtn.textContent = 'Chargement...';
+
+    try {
+        // Fetch activities from backend
+        console.log('Fetching activities...');
+        activitiesData = await invoke('fetch_activities');
+        console.log('Fetched activities:', activitiesData);
+
+        // Open the activity selection dialog
+        openActivityDialog();
+    } catch (error) {
+        console.error('Failed to fetch activities:', error);
+        handleError(error, 'fetch activities');
+    } finally {
+        // Re-enable button
+        syncBtn.disabled = !isAuthenticated;
+        syncBtn.removeAttribute('aria-busy');
+        syncBtn.textContent = originalText;
+    }
+}
+
+/**
+ * Open the activity selection dialog and populate with activities
+ */
+function openActivityDialog() {
+    const dialog = document.getElementById('activity-selection-dialog');
+    const container = document.getElementById('activity-list-container');
+    const loadingText = document.getElementById('loading-activities');
+
+    // Clear previous content
+    container.innerHTML = '';
+
+    if (!activitiesData || activitiesData.activities.length === 0) {
+        container.innerHTML = '<p class="no-activities">Aucune activite trouvee.</p>';
+        dialog.showModal();
+        return;
+    }
+
+    // Determine pre-selection based on sync state
+    const previouslySyncedIds = new Set(activitiesData.previously_synced_ids || []);
+    const allActivityIds = new Set(activitiesData.activities.map(a => a.id));
+
+    // First sync (nothing synced yet): select all
+    // Subsequent syncs: select previously synced + new activities
+    if (previouslySyncedIds.size === 0) {
+        // First sync: select all
+        selectedActivityIds = new Set(allActivityIds);
+    } else {
+        // Subsequent syncs: pre-select previously synced + new activities
+        selectedActivityIds = new Set();
+        for (const activity of activitiesData.activities) {
+            // Select if previously synced OR if it's new (not in previously synced)
+            if (previouslySyncedIds.has(activity.id)) {
+                selectedActivityIds.add(activity.id);
+            } else {
+                // This is a new activity, also select it by default
+                selectedActivityIds.add(activity.id);
+            }
+        }
+    }
+
+    // Render activity list
+    renderActivityList();
+
+    // Update selection count
+    updateSelectionCount();
+
+    // Show dialog
+    dialog.showModal();
+}
+
+/**
+ * Render the activity list with checkboxes
+ */
+function renderActivityList() {
+    const container = document.getElementById('activity-list-container');
+    container.innerHTML = '';
+
+    // Sort activities by date (newest first)
+    const sortedActivities = [...activitiesData.activities].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+    });
+
+    for (const activity of sortedActivities) {
+        const isSelected = selectedActivityIds.has(activity.id);
+        const isPreviouslySynced = activitiesData.previously_synced_ids?.includes(activity.id);
+
+        // Format date
+        const date = activity.date.split('T')[0] || 'Date inconnue';
+
+        // Count media
+        const mediaCount = activity.medias?.length || 0;
+        const mediaText = mediaCount === 0 ? 'Pas de medias' :
+                         mediaCount === 1 ? '1 media' : `${mediaCount} medias`;
+
+        const item = document.createElement('label');
+        item.className = `activity-item${isSelected ? ' selected' : ''}${isPreviouslySynced ? ' previously-synced' : ''}`;
+        item.innerHTML = `
+            <input type="checkbox"
+                   value="${activity.id}"
+                   ${isSelected ? 'checked' : ''}
+                   class="activity-checkbox">
+            <div class="activity-info">
+                <span class="activity-title">${escapeHtml(activity.title)}</span>
+                <span class="activity-meta">
+                    <span class="activity-date">${date}</span>
+                    <span class="activity-media-count">${mediaText}</span>
+                    ${isPreviouslySynced ? '<span class="synced-badge">Deja synchronise</span>' : '<span class="new-badge">Nouveau</span>'}
+                </span>
+            </div>
+        `;
+
+        // Add event listener for checkbox change
+        const checkbox = item.querySelector('input');
+        checkbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                selectedActivityIds.add(activity.id);
+                item.classList.add('selected');
+            } else {
+                selectedActivityIds.delete(activity.id);
+                item.classList.remove('selected');
+            }
+            updateSelectionCount();
+        });
+
+        container.appendChild(item);
+    }
+}
+
+/**
+ * Update the selection count display
+ */
+function updateSelectionCount() {
+    const count = selectedActivityIds.size;
+    const countElement = document.getElementById('selection-count');
+    countElement.textContent = `${count} activite(s) selectionnee(s)`;
+
+    // Disable confirm button if nothing selected
+    const confirmBtn = document.getElementById('confirm-sync-btn');
+    confirmBtn.disabled = count === 0;
+}
+
+/**
+ * Handle select all button click
+ */
+function handleSelectAll() {
+    if (!activitiesData) return;
+
+    for (const activity of activitiesData.activities) {
+        selectedActivityIds.add(activity.id);
+    }
+
+    // Update checkboxes
+    document.querySelectorAll('.activity-checkbox').forEach(cb => {
+        cb.checked = true;
+        cb.closest('.activity-item')?.classList.add('selected');
+    });
+
+    updateSelectionCount();
+}
+
+/**
+ * Handle deselect all button click
+ */
+function handleDeselectAll() {
+    selectedActivityIds.clear();
+
+    // Update checkboxes
+    document.querySelectorAll('.activity-checkbox').forEach(cb => {
+        cb.checked = false;
+        cb.closest('.activity-item')?.classList.remove('selected');
+    });
+
+    updateSelectionCount();
+}
+
+/**
+ * Close the activity selection dialog
+ */
+function closeActivityDialog() {
+    const dialog = document.getElementById('activity-selection-dialog');
+    dialog.close();
+}
+
+/**
+ * Handle confirm sync button click
+ * Starts sync with selected activities
+ */
+async function handleConfirmSync() {
+    console.log('Confirm sync clicked, selected activities:', [...selectedActivityIds]);
+
+    // Close the dialog
+    closeActivityDialog();
+
+    // Get selected activity IDs as array
+    const selectedIds = [...selectedActivityIds];
+
+    if (selectedIds.length === 0) {
+        showInfo('Aucune activite selectionnee', 'Veuillez selectionner au moins une activite a synchroniser.');
+        return;
+    }
+
+    // Perform the sync with selected activities
+    await performSync(selectedIds);
+}
+
+/**
+ * Perform synchronization with the backend
+ * @param {string[]} selectedActivityIds - Array of activity IDs to sync
+ */
+async function performSync(selectedActivityIds) {
+    console.log('Sync initiated with', selectedActivityIds.length, 'activities...');
+
+    const syncBtn = document.getElementById('sync-btn');
 
     // Disable button and show loading state using Pico CSS aria-busy attribute
     syncBtn.disabled = true;
@@ -380,17 +616,20 @@ async function handleSync() {
 
     // Reset progress
     document.getElementById('sync-progress-fill').style.width = '0%';
-    document.getElementById('progress-text').textContent = 'Démarrage...';
+    document.getElementById('progress-text').textContent = 'Demarrage...';
     document.getElementById('current-file').textContent = '';
 
     try {
-        // Start sync with current configuration
-        const stats = await invoke('start_sync', { config });
+        // Start sync with current configuration and selected activity IDs
+        const stats = await invoke('start_sync', {
+            config,
+            selectedActivityIds: selectedActivityIds
+        });
 
         console.log('Sync completed successfully:', stats);
 
         // Show success notification with stats
-        const successMsg = `${stats.downloaded} fichiers téléchargés, ${stats.skipped} ignorés${stats.failed > 0 ? `, ${stats.failed} en échec` : ', aucun échec'}`;
+        const successMsg = `${stats.downloaded} fichiers telecharges, ${stats.skipped} ignores${stats.failed > 0 ? `, ${stats.failed} en echec` : ', aucun echec'}`;
         showSuccess(successMsg);
     } catch (error) {
         console.error('Sync failed:', error);
@@ -403,6 +642,15 @@ async function handleSync() {
         syncBtn.removeAttribute('aria-busy');
         syncBtn.textContent = originalText;
     }
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Initialize when DOM is ready

@@ -94,6 +94,19 @@ pub struct AppConfig {
     pub sync_path: PathBuf,
 }
 
+// Issue #131: Sync state for tracking previously synced activities
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
+pub struct SyncState {
+    pub synced_activity_ids: Vec<String>,
+}
+
+// Issue #131: Response type for fetch_activities command
+#[derive(Debug, Serialize, Clone)]
+pub struct FetchActivitiesResponse {
+    pub activities: Vec<Activity>,
+    pub previously_synced_ids: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,5 +437,88 @@ mod tests {
 
         let user_info: UserInfo = serde_json::from_str(json).unwrap();
         assert_eq!(user_info.id, 999999999999);
+    }
+
+    // ========== Tests for SyncState (Issue #131) ==========
+
+    #[test]
+    fn test_sync_state_default() {
+        let state = SyncState::default();
+        assert_eq!(state.synced_activity_ids.len(), 0);
+    }
+
+    #[test]
+    fn test_sync_state_serialization() {
+        let state = SyncState {
+            synced_activity_ids: vec!["act1".to_string(), "act2".to_string(), "act3".to_string()],
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("synced_activity_ids"));
+        assert!(json.contains("act1"));
+        assert!(json.contains("act2"));
+        assert!(json.contains("act3"));
+    }
+
+    #[test]
+    fn test_sync_state_deserialization() {
+        let json = r#"{"synced_activity_ids":["activity_123","activity_456"]}"#;
+        let state: SyncState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.synced_activity_ids.len(), 2);
+        assert_eq!(state.synced_activity_ids[0], "activity_123");
+        assert_eq!(state.synced_activity_ids[1], "activity_456");
+    }
+
+    #[test]
+    fn test_sync_state_roundtrip() {
+        let state = SyncState {
+            synced_activity_ids: vec!["id1".to_string(), "id2".to_string()],
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: SyncState = serde_json::from_str(&json).unwrap();
+        assert_eq!(state.synced_activity_ids, deserialized.synced_activity_ids);
+    }
+
+    #[test]
+    fn test_sync_state_empty() {
+        let json = r#"{"synced_activity_ids":[]}"#;
+        let state: SyncState = serde_json::from_str(json).unwrap();
+        assert_eq!(state.synced_activity_ids.len(), 0);
+    }
+
+    // ========== Tests for FetchActivitiesResponse (Issue #131) ==========
+
+    #[test]
+    fn test_fetch_activities_response_serialization() {
+        let response = FetchActivitiesResponse {
+            activities: vec![Activity {
+                id: "act123".to_string(),
+                title: "Test Activity".to_string(),
+                body: "Content".to_string(),
+                date: "2024-01-01T12:00:00Z".to_string(),
+                medias: vec![],
+                pupils: vec![1],
+            }],
+            previously_synced_ids: vec!["old_act1".to_string(), "old_act2".to_string()],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("activities"));
+        assert!(json.contains("previously_synced_ids"));
+        assert!(json.contains("act123"));
+        assert!(json.contains("old_act1"));
+    }
+
+    #[test]
+    fn test_fetch_activities_response_empty() {
+        let response = FetchActivitiesResponse {
+            activities: vec![],
+            previously_synced_ids: vec![],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"activities\":[]"));
+        assert!(json.contains("\"previously_synced_ids\":[]"));
     }
 }

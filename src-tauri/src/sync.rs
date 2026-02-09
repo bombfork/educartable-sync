@@ -1,10 +1,10 @@
 // Sync engine for downloading media
 
 use crate::api::EducartableClient;
-use crate::models::{Activity, Media, SyncProgress, SyncStats};
+use crate::models::{Activity, FetchActivitiesResponse, Media, SyncProgress, SyncState, SyncStats};
 use reqwest::Client;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::fs;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -120,6 +120,84 @@ fn format_article_markdown(activity: &Activity) -> String {
         "# {}\n\nPublié le : {}\n\n{}",
         activity.title, date, activity.body
     )
+}
+
+// Issue #131: Sync state persistence functions
+
+/// Get the path to the sync state file
+fn get_sync_state_path(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    log::debug!("Getting sync state file path");
+
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|e| {
+        log::error!("Failed to get app data directory: {e}");
+        "Cannot access application data directory. Please check permissions.".to_string()
+    })?;
+
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| {
+        log::error!("Failed to create app data directory: {e}");
+        "Cannot create application data directory. Please check disk space and permissions."
+            .to_string()
+    })?;
+
+    let state_path = app_data_dir.join("sync_state.json");
+    log::debug!("Sync state file path: {}", state_path.display());
+    Ok(state_path)
+}
+
+/// Load sync state from disk
+fn load_sync_state(app_handle: &AppHandle) -> Result<SyncState, String> {
+    log::info!("Loading sync state");
+    let state_path = get_sync_state_path(app_handle)?;
+
+    // If state file doesn't exist, return default state
+    if !state_path.exists() {
+        log::info!("Sync state file does not exist, returning default state");
+        return Ok(SyncState::default());
+    }
+
+    // Read and parse state file
+    log::debug!("Reading sync state from {}", state_path.display());
+    let state_json = std::fs::read_to_string(&state_path).map_err(|e| {
+        log::error!("Failed to read sync state file: {e}");
+        "Cannot read sync state file. Please check permissions.".to_string()
+    })?;
+
+    let state: SyncState = serde_json::from_str(&state_json).map_err(|e| {
+        log::error!("Failed to parse sync state file: {e}");
+        "Sync state file is corrupted. Starting fresh.".to_string()
+    })?;
+
+    log::info!(
+        "Sync state loaded successfully with {} previously synced activities",
+        state.synced_activity_ids.len()
+    );
+    Ok(state)
+}
+
+/// Save sync state to disk
+fn save_sync_state(app_handle: &AppHandle, state: &SyncState) -> Result<(), String> {
+    log::info!("Saving sync state");
+    let state_path = get_sync_state_path(app_handle)?;
+
+    // Serialize state to JSON
+    let state_json = serde_json::to_string_pretty(state).map_err(|e| {
+        log::error!("Failed to serialize sync state: {e}");
+        "Cannot prepare sync state for saving. Please try again.".to_string()
+    })?;
+
+    // Write to file
+    log::debug!("Writing sync state to {}", state_path.display());
+    std::fs::write(&state_path, state_json).map_err(|e| {
+        log::error!("Failed to write sync state file: {e}");
+        "Cannot save sync state. Please check disk space and permissions.".to_string()
+    })?;
+
+    log::info!(
+        "Sync state saved successfully with {} synced activities",
+        state.synced_activity_ids.len()
+    );
+    Ok(())
 }
 
 // Issue #27: Duplicate detection
@@ -268,7 +346,14 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
         let _ = self.app_handle.emit("sync-progress", &progress);
     }
 
-    pub async fn sync_all(&self) -> Result<SyncStats, Box<dyn std::error::Error + Send + Sync>> {
+    /// Sync all activities or a filtered subset
+    ///
+    /// # Arguments
+    /// * `selected_activity_ids` - Optional list of activity IDs to sync. If None, syncs all activities.
+    pub async fn sync_all(
+        &self,
+        selected_activity_ids: Option<Vec<String>>,
+    ) -> Result<SyncStats, Box<dyn std::error::Error + Send + Sync>> {
         log::info!("Starting sync operation");
         let mut stats = SyncStats::default();
 
@@ -285,7 +370,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
         // Fetch all activities
         self.emit_progress(0, 0, "Fetching activities...".to_string());
         log::info!("Fetching all activities");
-        let activities = self
+        let all_activities = self
             .api_client
             .fetch_all_activities(parent_id)
             .await
@@ -293,6 +378,18 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
                 log::error!("Failed to fetch activities: {e}");
                 "Cannot load activities from Educartable. Please check your connection.".to_string()
             })?;
+
+        // Filter activities if selected_activity_ids is provided
+        let activities: Vec<Activity> = if let Some(ids) = &selected_activity_ids {
+            log::info!("Filtering to {} selected activities", ids.len());
+            all_activities
+                .into_iter()
+                .filter(|a| ids.contains(&a.id))
+                .collect()
+        } else {
+            log::info!("Syncing all activities (no filter)");
+            all_activities
+        };
 
         #[allow(clippy::cast_possible_truncation)]
         {
@@ -397,6 +494,72 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
     }
 }
 
+/// Fetches activities from Educartable without syncing.
+///
+/// Returns the list of activities along with previously synced activity IDs.
+/// This allows the frontend to display a selection dialog for the user.
+///
+/// # Arguments
+/// * `app_handle` - Tauri application handle for accessing sync state
+///
+/// # Returns
+/// - `Ok(FetchActivitiesResponse)` - Activities and sync state
+/// - `Err(String)` - Failed to fetch activities
+///
+/// # Errors
+/// - User not authenticated
+/// - Network errors fetching activities
+// Issue #131: Tauri command for fetching activities before sync
+#[tauri::command]
+pub async fn fetch_activities(app_handle: AppHandle) -> Result<FetchActivitiesResponse, String> {
+    log::info!("Fetch activities command invoked");
+
+    // Verify authentication
+    log::debug!("Verifying authentication");
+    crate::auth::load_tokens_default().map_err(|e| {
+        log::error!("Not authenticated: {e}");
+        e
+    })?;
+
+    // Load sync state
+    let sync_state = load_sync_state(&app_handle).unwrap_or_else(|e| {
+        log::warn!("Failed to load sync state, using default: {e}");
+        SyncState::default()
+    });
+
+    // Create API client
+    let api_client = EducartableClient::new_no_redirect()
+        .map_err(|e| format!("Failed to create API client: {e}"))?;
+
+    // Get parent ID
+    log::info!("Fetching parent ID");
+    let parent_id = api_client.get_parent_id().await.map_err(|e| {
+        log::error!("Failed to get user info: {e}");
+        "Cannot access your account information. Please check your connection.".to_string()
+    })?;
+
+    // Fetch all activities
+    log::info!("Fetching all activities");
+    let activities = api_client
+        .fetch_all_activities(parent_id)
+        .await
+        .map_err(|e| {
+            log::error!("Failed to fetch activities: {e}");
+            "Cannot load activities from Educartable. Please check your connection.".to_string()
+        })?;
+
+    log::info!(
+        "Fetched {} activities, {} previously synced",
+        activities.len(),
+        sync_state.synced_activity_ids.len()
+    );
+
+    Ok(FetchActivitiesResponse {
+        activities,
+        previously_synced_ids: sync_state.synced_activity_ids,
+    })
+}
+
 /// Starts synchronization of media files from Educartable.
 ///
 /// Fetches all activities for the authenticated user, then downloads
@@ -407,6 +570,7 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
 /// # Arguments
 /// * `app_handle` - Tauri application handle for emitting progress events
 /// * `config` - Application configuration containing sync directory path
+/// * `selected_activity_ids` - Optional list of activity IDs to sync. If None, syncs all.
 ///
 /// # Returns
 /// - `Ok(SyncStats)` - Sync completed with download statistics
@@ -421,12 +585,20 @@ impl<H: crate::api::HttpClient> SyncEngine<H> {
 /// - Network errors fetching activities or media
 /// - File system errors creating directories or downloading files
 // Issue #34: Tauri command for starting sync
+// Issue #131: Modified to accept optional selected activity IDs
 #[tauri::command]
 pub async fn start_sync(
     app_handle: AppHandle,
     config: crate::models::AppConfig,
+    selected_activity_ids: Option<Vec<String>>,
 ) -> Result<SyncStats, String> {
     log::info!("Sync command invoked");
+
+    if let Some(ref ids) = selected_activity_ids {
+        log::info!("Syncing {} selected activities", ids.len());
+    } else {
+        log::info!("Syncing all activities");
+    }
 
     // Verify authentication (this will also attempt token refresh if needed)
     log::debug!("Verifying authentication");
@@ -448,14 +620,37 @@ pub async fn start_sync(
         .map_err(|e| format!("Failed to create API client: {e}"))?;
 
     // Create sync engine
-    let sync_engine = SyncEngine::new(app_handle, api_client, config.sync_path);
+    let sync_engine = SyncEngine::new(app_handle.clone(), api_client, config.sync_path);
 
-    // Run synchronization
+    // Run synchronization with optional filtering
     log::info!("Starting synchronization");
-    let result = sync_engine.sync_all().await.map_err(|e| {
-        log::error!("Sync failed: {e}");
-        e.to_string()
-    });
+    let result = sync_engine
+        .sync_all(selected_activity_ids.clone())
+        .await
+        .map_err(|e| {
+            log::error!("Sync failed: {e}");
+            e.to_string()
+        });
+
+    // If sync succeeded and we have selected activity IDs, update sync state
+    if result.is_ok() {
+        if let Some(ids) = selected_activity_ids {
+            // Load existing sync state
+            let mut sync_state = load_sync_state(&app_handle).unwrap_or_default();
+
+            // Add newly synced IDs (avoiding duplicates)
+            for id in ids {
+                if !sync_state.synced_activity_ids.contains(&id) {
+                    sync_state.synced_activity_ids.push(id);
+                }
+            }
+
+            // Save updated sync state
+            if let Err(e) = save_sync_state(&app_handle, &sync_state) {
+                log::warn!("Failed to save sync state: {e}");
+            }
+        }
+    }
 
     match &result {
         Ok(stats) => log::info!("Sync completed successfully: {stats:?}"),

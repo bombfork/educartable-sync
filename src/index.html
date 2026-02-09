@@ -61,7 +61,7 @@
         <h2>📥 Synchronisation</h2>
 
         <button id="sync-btn" disabled>
-          Synchroniser maintenant
+          Synchroniser
         </button>
 
         <div id="sync-progress-container">
@@ -74,6 +74,31 @@
       </section>
     </article>
   </main>
+
+  <!-- Issue #131: Activity Selection Dialog -->
+  <dialog id="activity-selection-dialog">
+    <article class="activity-dialog-article">
+      <header>
+        <button id="close-dialog-btn" aria-label="Fermer" rel="prev"></button>
+        <h3>Selectionner les activites a synchroniser</h3>
+      </header>
+      <div class="activity-dialog-controls">
+        <div class="selection-controls">
+          <button id="select-all-btn" class="secondary btn-compact">Tout selectionner</button>
+          <button id="deselect-all-btn" class="secondary btn-compact">Tout deselectionner</button>
+        </div>
+        <span id="selection-count" class="selection-count">0 activite(s) selectionnee(s)</span>
+      </div>
+      <div id="activity-list-container" class="activity-list-container">
+        <!-- Dynamic activity checkboxes will be inserted here -->
+        <p id="loading-activities" class="loading-text">Chargement des activites...</p>
+      </div>
+      <footer>
+        <button id="cancel-selection-btn" class="secondary">Annuler</button>
+        <button id="confirm-sync-btn">Synchroniser la selection</button>
+      </footer>
+    </article>
+  </dialog>
 
   <script src="main.js" type="module"></script>
 </body>
